@@ -81,8 +81,21 @@ erp:
     connect-timeout-ms: 1000
     read-timeout-ms: 2000
   receipts:
-    # Local file: URIs only; no new REST download endpoint. PDFs are best-effort after commit.
+    # Explicit development default. Deployments must select minio; never falls back on failure.
+    # Private bucket provisioning and scoped credentials: docs/minio-receipts.md.
+    mode: ${ERP_RECEIPTS_MODE:local}
     storage-dir: ${ERP_RECEIPTS_STORAGE_DIR:${java.io.tmpdir}/erp-recibos}
+    minio:
+      endpoint: ${ERP_RECEIPTS_MINIO_ENDPOINT:}
+      access-key: ${ERP_RECEIPTS_MINIO_ACCESS_KEY:}
+      secret-key: ${ERP_RECEIPTS_MINIO_SECRET_KEY:}
+      bucket: ${ERP_RECEIPTS_MINIO_BUCKET:}
+      region: ${ERP_RECEIPTS_MINIO_REGION:us-east-1}
+      expiry-seconds: ${ERP_RECEIPTS_MINIO_EXPIRY_SECONDS:300}
+      connect-timeout-ms: 1000
+      read-timeout-ms: 2000
+      write-timeout-ms: 2000
+      call-timeout-ms: 5000
   reports:
     # Lazy dedicated pool; blank credentials disable ONLY reports. No writable-DB fallback.
     # Provision a new nonowner SELECT-only login manually with scripts/reporting-role.sql after V5.
