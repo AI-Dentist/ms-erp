@@ -16,11 +16,12 @@ Stack decision: Java 25, Spring Boot 4.0.8, Spring AI 2.0.1 (Jackson 3), Flyway,
 
 ## Tasks
 - [x] T1 — S1, S10 — inline — Phase 1 infra: mvnw, pom, docker-compose, application.yml, V1/V2 — commit: dabd5bb (assess: medium, deferred to slice)
-- [x] T2 — S2, S8, S9 — inline (shared kernel, domain, application) + gentle-ai-worker (persistence, security adapters, GraphQL controller, integration tests) — Phase 2 shared kernel + configsecurity — commit: see git log "feat(configsecurity)" (47 tests green; RED observed per worker report)
+- [x] T2 — S2, S8, S9 — inline (shared kernel, domain, application) + gentle-ai-worker (persistence, security adapters, GraphQL controller, integration tests) — Phase 2 shared kernel + configsecurity — commits: f4f2002 + 29de2ee (fix). Native review: high → lineage review-dd05b8062603753c found CRITICAL R3-idempotency-async-graphql (empty body stored on async dispatch) → corrected with RED/GREEN + differential; full-scope re-review hit lens_context_budget_exceeded → reduced-scope review-7a2a61df747b6c7c on 29de2ee APPROVED and acknowledged (burned). 50 tests green.
 - [ ] T3 — S3, S8, S9 — inline — Phase 3 mastercatalog + RabbitMQ publisher — commit: _
 - [ ] T4 — S4, S5, S8, S9 — inline — Phase 4a orders, payment plans, cash payment, cashflow, PDF receipt, saga listener — commit: _
 - [ ] T5 — S4, S5, S9 — inline — Phase 4b PagoFácil QR (mock), webhook REST, n8n notification — commit: _
 - [ ] T6 — S6, S7, S9 — inline — Phase 5 Text-to-SQL + Excel/PDF export REST — commit: _
+- [ ] T7 — S2 — inline — Follow-up from T2 review advisories (R3-error-not-released, R3-pending-key-stranded, R4-001, R4-002): release the idempotency key on async timeout/error (AsyncListener) and reclaim stale in-progress keys; strengthen async error test — commit: _
 
 Delivery: feature-branch-chain, forecast ~6000 authored lines; one slice (PR) per task commit.
 
