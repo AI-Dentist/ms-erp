@@ -1,6 +1,8 @@
 package com.dentalplatform.erp.shared.infrastructure.idempotency;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -133,6 +135,50 @@ class IdempotencyFilterTest {
         });
 
         assertThat(seen.toString()).isEqualTo(BODY);
+    }
+
+    @Test
+    void storesTheBodyWrittenDuringAsyncDispatchLikeSpringGraphQl() throws Exception {
+        MockHttpServletRequest request = post("k-async", BODY);
+        request.setAsyncSupported(true);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        // First dispatch: the handler only starts async processing (Spring GraphQL over MVC does this)
+        filter.doFilter(request, response, (req, res) -> {
+            executions.incrementAndGet();
+            req.startAsync(req, res);
+        });
+        assertThat(response.getContentAsString()).isEmpty();
+        assertThat(store.size()).isEqualTo(1);
+
+        // Async dispatch: the result is written to the response captured by the async context
+        request.setAsyncStarted(false);
+        request.setDispatcherType(DispatcherType.ASYNC);
+        ServletResponse asyncResponse = request.getAsyncContext().getResponse();
+        filter.doFilter(request, asyncResponse, (req, res) -> {
+            res.setContentType("application/json");
+            res.getWriter().write("{\"data\":{\"recibo\":1}}");
+        });
+
+        assertThat(response.getContentAsString()).isEqualTo("{\"data\":{\"recibo\":1}}");
+        MockHttpServletResponse replay = run(post("k-async", BODY), okChain("{\"data\":{\"recibo\":2}}"));
+        assertThat(replay.getHeader(IdempotencyFilter.REPLAYED_HEADER)).isEqualTo("true");
+        assertThat(replay.getContentAsString()).isEqualTo("{\"data\":{\"recibo\":1}}");
+        assertThat(executions).hasValue(1);
+    }
+
+    @Test
+    void releasesKeyWhenAsyncDispatchProducesGraphQlErrors() throws Exception {
+        MockHttpServletRequest request = post("k-async-err", BODY);
+        request.setAsyncSupported(true);
+        filter.doFilter(request, new MockHttpServletResponse(), (req, res) -> req.startAsync(req, res));
+
+        request.setAsyncStarted(false);
+        request.setDispatcherType(DispatcherType.ASYNC);
+        filter.doFilter(request, request.getAsyncContext().getResponse(),
+                (req, res) -> res.getWriter().write("{\"errors\":[{\"message\":\"saldo insuficiente\"}]}"));
+
+        assertThat(store.size()).isZero();
     }
 
     private MockHttpServletRequest post(String key, String body) {

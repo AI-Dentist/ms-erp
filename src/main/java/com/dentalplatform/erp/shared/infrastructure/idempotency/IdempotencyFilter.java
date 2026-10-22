@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingResponseWrapper;
+import org.springframework.web.util.WebUtils;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -32,6 +33,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     public static final String HEADER = "Idempotency-Key";
     public static final String REPLAYED_HEADER = "Idempotency-Replayed";
     static final int MAX_KEY_LENGTH = 100;
+    private static final String PENDING_KEY_ATTRIBUTE = IdempotencyFilter.class.getName() + ".PENDING_KEY";
 
     private final IdempotencyStore store;
     private final Duration ttl;
@@ -48,9 +50,19 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         return !"POST".equalsIgnoreCase(request.getMethod()) || request.getHeader(HEADER) == null;
     }
 
+    /** Spring GraphQL over MVC answers asynchronously: the body is only written during the async dispatch. */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        if (isAsyncDispatch(request)) {
+            continueAsync(request, response, chain);
+            return;
+        }
         String key = request.getHeader(HEADER).trim();
         if (key.isEmpty() || key.length() > MAX_KEY_LENGTH) {
             writeError(response, HttpServletResponse.SC_BAD_REQUEST,
@@ -75,9 +87,44 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private void execute(String key, CachedBodyRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         ContentCachingResponseWrapper wrapper = new ContentCachingResponseWrapper(response);
-        boolean stored = false;
         try {
             chain.doFilter(request, wrapper);
+        } catch (ServletException | IOException | RuntimeException e) {
+            store.release(key);
+            throw e;
+        }
+        if (request.isAsyncStarted()) {
+            // Keep the key claimed; the async dispatch finishes it with the real body
+            request.setAttribute(PENDING_KEY_ATTRIBUTE, key);
+            return;
+        }
+        finish(key, wrapper);
+    }
+
+    private void continueAsync(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        String key = (String) request.getAttribute(PENDING_KEY_ATTRIBUTE);
+        ContentCachingResponseWrapper wrapper = WebUtils.getNativeResponse(response, ContentCachingResponseWrapper.class);
+        if (key == null || wrapper == null) {
+            chain.doFilter(request, response);
+            return;
+        }
+        try {
+            chain.doFilter(request, response);
+        } catch (ServletException | IOException | RuntimeException e) {
+            store.release(key);
+            request.removeAttribute(PENDING_KEY_ATTRIBUTE);
+            throw e;
+        }
+        if (!request.isAsyncStarted()) {
+            request.removeAttribute(PENDING_KEY_ATTRIBUTE);
+            finish(key, wrapper);
+        }
+    }
+
+    private void finish(String key, ContentCachingResponseWrapper wrapper) throws IOException {
+        boolean stored = false;
+        try {
             String body = new String(wrapper.getContentAsByteArray(), StandardCharsets.UTF_8);
             if (isSuccessful(wrapper.getStatus(), body)) {
                 store.complete(key, new StoredResponse(wrapper.getStatus(), wrapper.getContentType(), body));

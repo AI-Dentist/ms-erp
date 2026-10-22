@@ -2,6 +2,7 @@ package com.dentalplatform.erp.shared.infrastructure.config;
 
 import com.dentalplatform.erp.shared.infrastructure.idempotency.IdempotencyFilter;
 import com.dentalplatform.erp.shared.infrastructure.idempotency.IdempotencyStore;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -22,6 +23,7 @@ public class IdempotencyConfig {
         FilterRegistrationBean<IdempotencyFilter> registration =
                 new FilterRegistrationBean<>(new IdempotencyFilter(store, Duration.ofHours(ttlHours), clock));
         registration.setOrder(FILTER_ORDER);
+        registration.setDispatcherTypes(DispatcherType.REQUEST, DispatcherType.ASYNC);
         registration.addUrlPatterns("/graphql", "/api/*");
         return registration;
     }
