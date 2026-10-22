@@ -20,6 +20,10 @@ spring:
     enabled: true
     locations: classpath:db/migration
   rabbitmq:
+    listener:
+      simple:
+        # Failed saga deliveries are rejected to the configured DLX, never requeued forever.
+        default-requeue-rejected: false
     host: ${ERP_RABBIT_HOST:localhost}
     port: ${ERP_RABBIT_PORT:5672}
     username: ${ERP_RABBIT_USER:erp_user}
@@ -71,6 +75,9 @@ erp:
   n8n:
     enabled: ${N8N_ENABLED:false}
     webhook-url: ${N8N_WEBHOOK_URL:http://localhost:5678/webhook/erp-recibo-emitido}
+  receipts:
+    # Local file: URIs only; no new REST download endpoint. PDFs are best-effort after commit.
+    storage-dir: ${ERP_RECEIPTS_STORAGE_DIR:${java.io.tmpdir}/erp-recibos}
   reports:
     max-rows: 500
     public-base-url: ${ERP_PUBLIC_BASE_URL:http://localhost:8081}
