@@ -56,6 +56,8 @@ erp:
     exchange: dental.topic.exchange
     consulta-finalizada-queue: erp.consulta.finalizada.queue
     consulta-finalizada-routing-key: clinica.consulta.finalizada
+    dead-letter-exchange: dental.dlx.exchange
+    consulta-finalizada-dlq: erp.consulta.finalizada.dlq
   idempotency:
     ttl-hours: 24
   pagofacil:

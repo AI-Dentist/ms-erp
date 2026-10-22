@@ -2,12 +2,14 @@ package com.dentalplatform.erp.support;
 
 import io.micrometer.context.ContextSnapshotFactory;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.graphql.ExecutionGraphQlService;
 import org.springframework.graphql.test.tester.ExecutionGraphQlServiceTester;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertySource;
 
 import java.sql.Connection;
@@ -16,7 +18,8 @@ import java.sql.Statement;
 
 /**
  * Base for integration tests: full Spring context on a real PostgreSQL (embedded, shared per JVM) with Flyway
- * applied, dev security mode and RabbitMQ listeners disabled. Keep the configuration identical across subclasses
+ * applied, dev security mode, RabbitMQ listeners disabled and the RabbitTemplate mocked (no broker is needed;
+ * mocks are reset after every test). Keep the configuration identical across subclasses
  * so the Spring context is cached; tests share one database, so use unique values per test.
  */
 @SpringBootTest
@@ -29,6 +32,9 @@ public abstract class IntegrationTestBase {
 
     @Autowired
     protected JdbcTemplate jdbc;
+
+    @MockitoBean
+    protected RabbitTemplate rabbitTemplate;
 
     protected ExecutionGraphQlServiceTester graphQl;
 
