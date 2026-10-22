@@ -2,7 +2,6 @@ package com.dentalplatform.erp.mastercatalog.presentation;
 
 import com.dentalplatform.erp.support.IntegrationTestBase;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -15,12 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @WithMockUser(username = "admin", roles = "ADMIN")
@@ -58,10 +52,17 @@ class MasterCatalogGraphQLIntegrationTest extends IntegrationTestBase {
     }
 
     private JsonNode sentPayload(String routingKey) {
-        ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
-        verify(rabbitTemplate, times(1)).convertAndSend(eq(EXCHANGE), eq(routingKey), payload.capture());
-        verify(rabbitTemplate, times(1)).convertAndSend(anyString(), anyString(), any(Object.class));
-        return jsonMapper.readTree(jsonMapper.writeValueAsString(payload.getValue()));
+        verifyNoInteractions(rabbitTemplate);
+        Map<String, Object> row = jdbc.queryForMap("""
+                SELECT event_id, exchange_name, payload::text, attempts, sent_at
+                FROM catalog_event_outbox WHERE routing_key = ?
+                ORDER BY created_at DESC LIMIT 1""", routingKey);
+        JsonNode payload = jsonMapper.readTree(row.get("payload").toString());
+        assertThat(payload.get("eventId").asString()).isEqualTo(row.get("event_id").toString());
+        assertThat(row.get("exchange_name")).isEqualTo(EXCHANGE);
+        assertThat(row.get("attempts")).isEqualTo(0);
+        assertThat(row.get("sent_at")).isNull();
+        return payload;
     }
 
     private static Set<String> fieldNames(JsonNode node) {
@@ -106,6 +107,7 @@ class MasterCatalogGraphQLIntegrationTest extends IntegrationTestBase {
                 .path("crearPaciente.id").hasValue();
         int rowsBefore = jdbc.queryForObject("SELECT count(*) FROM pacientes", Integer.class);
         int auditBefore = jdbc.queryForObject("SELECT count(*) FROM audit_logs", Integer.class);
+        List<Map<String, Object>> outboxBefore = jdbc.queryForList("SELECT * FROM catalog_event_outbox ORDER BY event_id");
         reset(rabbitTemplate);
 
         graphQl.document(CREAR_PACIENTE).variable("input", pacienteInput(" " + ciNit + " ")).execute()
@@ -116,6 +118,7 @@ class MasterCatalogGraphQLIntegrationTest extends IntegrationTestBase {
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pacientes", Integer.class)).isEqualTo(rowsBefore);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_logs", Integer.class)).isEqualTo(auditBefore);
+        assertThat(jdbc.queryForList("SELECT * FROM catalog_event_outbox ORDER BY event_id")).isEqualTo(outboxBefore);
         verifyNoInteractions(rabbitTemplate);
     }
 
@@ -142,6 +145,8 @@ class MasterCatalogGraphQLIntegrationTest extends IntegrationTestBase {
 
     @Test
     void createDentistWithUnknownSpecialtyIsBadRequestAndNothingIsPersistedOrSent() {
+        List<Map<String, Object>> outboxBefore = jdbc.queryForList("SELECT * FROM catalog_event_outbox ORDER BY event_id");
+        int auditsBefore = jdbc.queryForObject("SELECT count(*) FROM audit_logs", Integer.class);
         String suffix = unique();
         graphQl.document(CREAR_ODONTOLOGO)
                 .variable("input", odontologoInput(suffix, List.of(ORTODONCIA_ID, UUID.randomUUID().toString())))
@@ -150,6 +155,8 @@ class MasterCatalogGraphQLIntegrationTest extends IntegrationTestBase {
                 .path("crearOdontologo").pathDoesNotExist();
 
         assertThat(count("odontologos", "matricula_profesional", "MAT-" + suffix)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_logs", Integer.class)).isEqualTo(auditsBefore);
+        assertThat(jdbc.queryForList("SELECT * FROM catalog_event_outbox ORDER BY event_id")).isEqualTo(outboxBefore);
         verifyNoInteractions(rabbitTemplate);
     }
 

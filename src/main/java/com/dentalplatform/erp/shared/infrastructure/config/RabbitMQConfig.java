@@ -7,6 +7,9 @@ import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
+import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
+import org.springframework.boot.amqp.autoconfigure.ConnectionFactoryCustomizer;
+import org.springframework.boot.amqp.autoconfigure.RabbitTemplateCustomizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -56,6 +59,27 @@ public class RabbitMQConfig {
                                                 DirectExchange erpDeadLetterExchange,
                                                 @Value("${erp.messaging.consulta-finalizada-dlq}") String dlq) {
         return BindingBuilder.bind(consultaFinalizadaDeadLetterQueue).to(erpDeadLetterExchange).with(dlq);
+    }
+
+    @Bean
+    RabbitTemplateCustomizer confirmedMandatoryPublishing() {
+        return template -> {
+            if (!(template.getConnectionFactory() instanceof CachingConnectionFactory factory)) {
+                throw new IllegalStateException("Catalog outbox requires CachingConnectionFactory");
+            }
+            factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
+            factory.setPublisherReturns(true);
+            template.setMandatory(true);
+        };
+    }
+
+    @Bean
+    ConnectionFactoryCustomizer boundedRabbitConnections() {
+        return factory -> {
+            factory.setConnectionTimeout(2000);
+            factory.setHandshakeTimeout(2000);
+            factory.setChannelRpcTimeout(2000);
+        };
     }
 
     @Bean

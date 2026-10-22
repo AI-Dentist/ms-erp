@@ -45,12 +45,14 @@ public abstract class IntegrationTestBase {
         registry.add("spring.datasource.username", () -> "postgres");
         registry.add("spring.datasource.password", () -> "postgres");
         registry.add("erp.security.dev-mode", () -> "true");
+        registry.add("erp.catalog-outbox.enabled", () -> "false");
         registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
         registry.add("spring.rabbitmq.listener.direct.auto-startup", () -> "false");
     }
 
     @BeforeEach
     void createGraphQlTester() {
+        org.mockito.Mockito.clearInvocations(rabbitTemplate);
         // Calling the service directly bypasses the web layer that normally propagates the SecurityContext
         // (set by @WithMockUser on the test thread) into the GraphQL execution, so capture it here.
         ExecutionGraphQlService withSecurityContext = request -> graphQlService.execute(request)
