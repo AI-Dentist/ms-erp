@@ -1,6 +1,8 @@
 package com.dentalplatform.erp.shared.infrastructure.idempotency;
 
+import jakarta.servlet.AsyncEvent;
 import jakarta.servlet.DispatcherType;
+import org.springframework.mock.web.MockAsyncContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletResponse;
@@ -179,6 +181,152 @@ class IdempotencyFilterTest {
                 (req, res) -> res.getWriter().write("{\"errors\":[{\"message\":\"saldo insuficiente\"}]}"));
 
         assertThat(store.size()).isZero();
+    }
+
+    @Test
+    void terminalTimeoutAndErrorKeepUnknownOutcomeClaim() throws Exception {
+        for (boolean timeout : new boolean[]{true, false}) {
+            String key = "unknown-" + timeout;
+            MockHttpServletRequest request = startAsync(key);
+            MockAsyncContext context = (MockAsyncContext) request.getAsyncContext();
+            assertThat(context.getListeners()).hasSize(1);
+            for (var listener : context.getListeners()) {
+                var event = new AsyncEvent(context, new IllegalStateException("unknown outcome"));
+                if (timeout) listener.onTimeout(event);
+                else listener.onError(event);
+            }
+            context.complete();
+            MockHttpServletResponse retry = run(post(key, BODY), okChain("{}"));
+            assertThat(retry.getStatus()).isEqualTo(409);
+            assertThat(retry.getContentAsString()).isEqualTo(
+                    "{\"error\":\"Ya existe una solicitud en curso con esta Idempotency-Key\"}");
+            assertThat(retry.getHeader(IdempotencyFilter.REPLAYED_HEADER)).isNull();
+        }
+        assertThat(executions).hasValue(0);
+    }
+
+    @Test
+    void terminalCallbacksRacingMutationDoNotEnableDuplicateExecution() throws Exception {
+        MockHttpServletRequest request = startAsync("running");
+        MockAsyncContext context = (MockAsyncContext) request.getAsyncContext();
+        request.setAsyncStarted(false);
+        request.setDispatcherType(DispatcherType.ASYNC);
+        filter.doFilter(request, context.getResponse(), (req, res) -> {
+            for (var listener : context.getListeners()) {
+                listener.onTimeout(new AsyncEvent(context));
+                listener.onError(new AsyncEvent(context));
+            }
+            context.complete(); // Servlet completion does not stop this handler.
+            try {
+                assertThat(run(post("running", BODY), okChain("{}")).getStatus()).isEqualTo(409);
+            } catch (Exception e) {
+                throw new jakarta.servlet.ServletException(e);
+            }
+            res.getWriter().write("{\"data\":true}");
+        });
+        assertThat(run(post("running", BODY), okChain("{}")).getStatus()).isEqualTo(409);
+        assertThat(executions).hasValue(0);
+    }
+
+    @Test
+    void listenerRegistersOnSubsequentAsyncCycle() throws Exception {
+        MockHttpServletRequest request = startAsync("cycles");
+        MockAsyncContext previous = (MockAsyncContext) request.getAsyncContext();
+        assertThat(previous.getListeners()).hasSize(1);
+        MockAsyncContext next = new MockAsyncContext(request, previous.getResponse());
+        for (var listener : previous.getListeners()) listener.onStartAsync(new AsyncEvent(next));
+        assertThat(next.getListeners()).hasSize(1);
+        next.complete();
+        assertThat(run(post("cycles", BODY), okChain("{}")).getStatus()).isEqualTo(409);
+        assertThat(executions).hasValue(0);
+    }
+
+    @Test
+    void completionKeepsSuccessfulReplayAndLateEventsCannotEraseReplacement() throws Exception {
+        MockHttpServletRequest request = startAsync("late");
+        MockAsyncContext context = (MockAsyncContext) request.getAsyncContext();
+        assertThat(context.getListeners()).hasSize(1);
+        request.setAsyncStarted(false);
+        request.setDispatcherType(DispatcherType.ASYNC);
+        filter.doFilter(request, context.getResponse(), okChain("{\"data\":1}"));
+        context.complete();
+        assertThat(run(post("late", BODY), okChain("{}")).getContentAsString()).isEqualTo("{\"data\":1}");
+        store.release("late"); // Simulates completed-cache expiry through the public store.
+        run(post("late", BODY), okChain("{\"data\":2}"));
+        for (var listener : context.getListeners()) {
+            listener.onTimeout(new AsyncEvent(context));
+            listener.onError(new AsyncEvent(context));
+            listener.onComplete(new AsyncEvent(context));
+        }
+        assertThat(run(post("late", BODY), okChain("{}")).getContentAsString()).isEqualTo("{\"data\":2}");
+        assertThat(executions).hasValue(2);
+    }
+
+    @Test
+    void errorUnwindReleasesClaimAndPreservesOriginalThrowableForBothDispatches() throws Exception {
+        for (boolean async : new boolean[]{false, true}) {
+            String key = "error-" + async;
+            MockHttpServletRequest request = async ? startAsync(key) : post(key, BODY);
+            ServletResponse response = new MockHttpServletResponse();
+            if (async) {
+                response = request.getAsyncContext().getResponse();
+                request.setAsyncStarted(false);
+                request.setDispatcherType(DispatcherType.ASYNC);
+            }
+            AssertionError original = new AssertionError("handler failed");
+            ServletResponse target = response;
+            assertThatThrownBy(() -> filter.doFilter(request, target, (req, res) -> { throw original; }))
+                    .isSameAs(original);
+            MockHttpServletResponse retry = run(post(key, BODY), okChain("{\"data\":true}"));
+            assertThat(retry.getStatus()).isEqualTo(200);
+            assertThat(retry.getHeader(IdempotencyFilter.REPLAYED_HEADER)).isNull();
+            assertThat(retry.getContentAsString()).isEqualTo("{\"data\":true}");
+        }
+        assertThat(executions).hasValue(2);
+    }
+
+    @Test
+    void releaseFailureCannotReplaceOriginalError() {
+        IdempotencyStore failing = new IdempotencyStore() {
+            public ClaimResult claim(String key, String operation, Instant expiresAt) { return ClaimResult.acquired(); }
+            public void complete(String key, StoredResponse response) { }
+            public void release(String key) { throw new IllegalStateException("release unavailable"); }
+        };
+        var guarded = new IdempotencyFilter(failing, Duration.ofHours(24), Clock.systemUTC());
+        AssertionError original = new AssertionError("mutation failed");
+        assertThatThrownBy(() -> guarded.doFilter(post("failure", BODY), new MockHttpServletResponse(),
+                (req, res) -> { throw original; })).isSameAs(original);
+        assertThat(original.getSuppressed()).hasSize(1);
+        assertThat(original.getSuppressed()[0]).hasMessage("release unavailable");
+    }
+
+    @Test
+    void asyncExceptionUnwindReleasesOnlyOnceDespiteLateEvents() throws Exception {
+        MockHttpServletRequest request = startAsync("exception");
+        MockAsyncContext context = (MockAsyncContext) request.getAsyncContext();
+        request.setAsyncStarted(false);
+        request.setDispatcherType(DispatcherType.ASYNC);
+        var original = new jakarta.servlet.ServletException("downstream failed");
+        assertThatThrownBy(() -> filter.doFilter(request, context.getResponse(),
+                (req, res) -> { throw original; })).isSameAs(original);
+        MockHttpServletResponse replacement = run(post("exception", BODY), okChain("{\"data\":3}"));
+        assertThat(replacement.getHeader(IdempotencyFilter.REPLAYED_HEADER)).isNull();
+        for (var listener : context.getListeners()) {
+            listener.onError(new AsyncEvent(context, original));
+            listener.onTimeout(new AsyncEvent(context));
+        }
+        context.complete();
+        MockHttpServletResponse replay = run(post("exception", BODY), okChain("{}"));
+        assertThat(replay.getHeader(IdempotencyFilter.REPLAYED_HEADER)).isEqualTo("true");
+        assertThat(replay.getContentAsString()).isEqualTo("{\"data\":3}");
+        assertThat(executions).hasValue(1);
+    }
+
+    private MockHttpServletRequest startAsync(String key) throws Exception {
+        MockHttpServletRequest request = post(key, BODY);
+        request.setAsyncSupported(true);
+        filter.doFilter(request, new MockHttpServletResponse(), (req, res) -> req.startAsync(req, res));
+        return request;
     }
 
     private MockHttpServletRequest post(String key, String body) {

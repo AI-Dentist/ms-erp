@@ -23,10 +23,10 @@ public interface IdempotencyRecordJpaRepository extends JpaRepository<Idempotenc
     int storeResponse(@Param("key") String key, @Param("payload") String payload);
 
     @Modifying
-    @Query("DELETE FROM IdempotencyRecordJpaEntity r WHERE r.key = :key AND r.expiresAt < :now")
+    @Query("DELETE FROM IdempotencyRecordJpaEntity r WHERE r.key = :key AND r.responsePayload IS NOT NULL AND r.expiresAt < :now")
     int deleteIfExpired(@Param("key") String key, @Param("now") OffsetDateTime now);
 
     @Modifying
-    @Query("DELETE FROM IdempotencyRecordJpaEntity r WHERE r.expiresAt < :now")
+    @Query("DELETE FROM IdempotencyRecordJpaEntity r WHERE r.responsePayload IS NOT NULL AND r.expiresAt < :now")
     int purgeExpired(@Param("now") OffsetDateTime now);
 }

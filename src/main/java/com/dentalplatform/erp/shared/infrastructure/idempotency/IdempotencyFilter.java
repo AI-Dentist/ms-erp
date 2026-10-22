@@ -2,6 +2,8 @@ package com.dentalplatform.erp.shared.infrastructure.idempotency;
 
 import com.dentalplatform.erp.shared.infrastructure.idempotency.IdempotencyStore.ClaimResult;
 import com.dentalplatform.erp.shared.infrastructure.idempotency.IdempotencyStore.StoredResponse;
+import jakarta.servlet.AsyncEvent;
+import jakarta.servlet.AsyncListener;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;
@@ -23,6 +25,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Makes POST requests carrying an {@code Idempotency-Key} header safe to retry on unstable networks:
@@ -87,54 +90,102 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private void execute(String key, CachedBodyRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         ContentCachingResponseWrapper wrapper = new ContentCachingResponseWrapper(response);
+        PendingClaim pending = new PendingClaim(key);
+        request.setAttribute(PENDING_KEY_ATTRIBUTE, pending);
         try {
             chain.doFilter(request, wrapper);
-        } catch (ServletException | IOException | RuntimeException e) {
-            store.release(key);
+        } catch (ServletException | IOException | RuntimeException | Error e) {
+            pending.failed(e);
             throw e;
         }
         if (request.isAsyncStarted()) {
-            // Keep the key claimed; the async dispatch finishes it with the real body
-            request.setAttribute(PENDING_KEY_ATTRIBUTE, key);
+            try {
+                request.getAsyncContext().addListener(pending);
+            } catch (IllegalStateException alreadyCompleted) {
+                // Completion raced registration: the outcome is unknown, so retain the claim.
+                pending.settled.set(true);
+            }
             return;
         }
-        finish(key, wrapper);
+        finish(pending, wrapper);
     }
 
     private void continueAsync(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String key = (String) request.getAttribute(PENDING_KEY_ATTRIBUTE);
+        PendingClaim pending = (PendingClaim) request.getAttribute(PENDING_KEY_ATTRIBUTE);
         ContentCachingResponseWrapper wrapper = WebUtils.getNativeResponse(response, ContentCachingResponseWrapper.class);
-        if (key == null || wrapper == null) {
+        if (pending == null || wrapper == null) {
             chain.doFilter(request, response);
             return;
         }
         try {
             chain.doFilter(request, response);
-        } catch (ServletException | IOException | RuntimeException e) {
-            store.release(key);
-            request.removeAttribute(PENDING_KEY_ATTRIBUTE);
+        } catch (ServletException | IOException | RuntimeException | Error e) {
+            pending.failed(e);
             throw e;
         }
         if (!request.isAsyncStarted()) {
-            request.removeAttribute(PENDING_KEY_ATTRIBUTE);
-            finish(key, wrapper);
+            finish(pending, wrapper);
         }
     }
 
-    private void finish(String key, ContentCachingResponseWrapper wrapper) throws IOException {
-        boolean stored = false;
+    private void finish(PendingClaim pending, ContentCachingResponseWrapper wrapper) throws IOException {
         try {
-            String body = new String(wrapper.getContentAsByteArray(), StandardCharsets.UTF_8);
-            if (isSuccessful(wrapper.getStatus(), body)) {
-                store.complete(key, new StoredResponse(wrapper.getStatus(), wrapper.getContentType(), body));
-                stored = true;
+            if (pending.settled.compareAndSet(false, true)) {
+                String body = new String(wrapper.getContentAsByteArray(), StandardCharsets.UTF_8);
+                if (isSuccessful(wrapper.getStatus(), body)) {
+                    store.complete(pending.key, new StoredResponse(wrapper.getStatus(), wrapper.getContentType(), body));
+                } else {
+                    store.release(pending.key);
+                }
             }
         } finally {
-            if (!stored) {
-                store.release(key);
-            }
             wrapper.copyBodyToResponse();
+        }
+    }
+
+    /**
+     * One terminal store action per acquired request, selected before touching persistence. Pending keys
+     * never expire: after this action, late events cannot affect a replacement claim. Servlet terminal
+     * events alone do not prove that an independent mutation worker has stopped, so they never release.
+     */
+    private final class PendingClaim implements AsyncListener {
+        private final String key;
+        private final AtomicBoolean settled = new AtomicBoolean();
+
+        private PendingClaim(String key) {
+            this.key = key;
+        }
+
+        private void failed(Throwable original) {
+            if (settled.compareAndSet(false, true)) {
+                try {
+                    store.release(key);
+                } catch (RuntimeException | Error releaseFailure) {
+                    if (releaseFailure != original) original.addSuppressed(releaseFailure);
+                }
+            }
+        }
+
+        @Override
+        public void onComplete(AsyncEvent event) {
+            // A completed dispatch has already cached its response; otherwise retain unknown outcome.
+            settled.compareAndSet(false, true);
+        }
+
+        @Override
+        public void onTimeout(AsyncEvent event) {
+            // Do not unlock: the application worker may still be committing a mutation.
+        }
+
+        @Override
+        public void onError(AsyncEvent event) {
+            // Only a failure observed unwinding through the filter can release the claim.
+        }
+
+        @Override
+        public void onStartAsync(AsyncEvent event) {
+            event.getAsyncContext().addListener(this);
         }
     }
 

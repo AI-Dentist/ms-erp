@@ -82,6 +82,14 @@ X-Local-Mock-Secret: <secreto configurado>
 
 Use el ID e importe realmente almacenados y una fecha dentro de la vigencia del QR (tolerancia de reloj: 60 s). Reintentos del mismo ID confirmado retornan el mismo recibo; no dependen de `Idempotency-Key`. Secreto incorrecto: 401; datos inválidos: 400; ID desconocido: 404; expirado: 410. **El proveedor real no está implementado**: fuera de `dev`, `PAGOFACIL_MOCK_ENABLED=false` falla cerrado; el callback autenticado devuelve 503. Este formato/secreto no representa el protocolo ni firma oficial de PagoFácil.
 
+## Idempotencia y resultados ambiguos
+
+En POST con `Idempotency-Key`, una respuesta exitosa se conserva y se reproduce para la misma ruta y cuerpo; otra solicitud en curso devuelve 409 y otro contenido devuelve 422. El callback PagoFácil queda excluido: su deduplicación usa el ID de transacción y siempre requiere autenticación.
+
+Solo las respuestas completadas caducan (24 horas por defecto). **Las claves en curso no caducan ni se recuperan automáticamente**, aunque venza ese plazo: un timeout o error servlet no demuestra que la mutación haya dejado de ejecutarse. La finalización servlet sin respuesta capturada también conserva la clave; la finalización posterior a una respuesta exitosa no elimina su replay. El listener se registra de nuevo en cada ciclo asíncrono.
+
+Se mantiene el contrato existente: una respuesta fallida (incluidos errores GraphQL) o un fallo que se desenrolla por el filtro libera la clave. Esto no demuestra por sí solo que una mutación no haya hecho commit. Ante un resultado ambiguo, compruebe el estado de negocio y reconcilie manualmente antes de decidir un reintento; no use otra clave para eludir un 409. No hay un endpoint ni comando automático de reconciliación. El filtro no garantiza ejecución exactamente una vez tras un crash o commit de resultado desconocido.
+
 ## Verificación y límites de la evidencia
 
 `./mvnw test` usa PostgreSQL 18 embebido y modelos/puertos simulados, sin llamadas reales a IA ni PagoFácil. Las pruebas cubren preguntas con fechas/categorías a través del adaptador, resultados SQL, permisos de lectura, rechazos sin cambios de filas/secuencias, propiedad/TTL y binarios PDF/XLSX.
