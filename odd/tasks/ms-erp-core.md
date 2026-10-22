@@ -15,8 +15,8 @@ Stack decision: Java 25, Spring Boot 4.0.8, Spring AI 2.0.1 (Jackson 3), Flyway,
 - S10 (AGENTS §6): "Compilar y verificar: `./mvnw clean compile`" / "Ejecutar pruebas: `./mvnw test`".
 
 ## Tasks
-- [ ] T1 — S1, S10 — inline — Phase 1 infra: mvnw, pom, docker-compose, application.yml, V1/V2 — commit: _
-- [ ] T2 — S2, S8, S9 — inline — Phase 2 shared kernel + configsecurity — commit: _
+- [x] T1 — S1, S10 — inline — Phase 1 infra: mvnw, pom, docker-compose, application.yml, V1/V2 — commit: dabd5bb (assess: medium, deferred to slice)
+- [x] T2 — S2, S8, S9 — inline (shared kernel, domain, application) + gentle-ai-worker (persistence, security adapters, GraphQL controller, integration tests) — Phase 2 shared kernel + configsecurity — commit: see git log "feat(configsecurity)" (47 tests green; RED observed per worker report)
 - [ ] T3 — S3, S8, S9 — inline — Phase 3 mastercatalog + RabbitMQ publisher — commit: _
 - [ ] T4 — S4, S5, S8, S9 — inline — Phase 4a orders, payment plans, cash payment, cashflow, PDF receipt, saga listener — commit: _
 - [ ] T5 — S4, S5, S9 — inline — Phase 4b PagoFácil QR (mock), webhook REST, n8n notification — commit: _
@@ -30,3 +30,12 @@ Delivery: feature-branch-chain, forecast ~6000 authored lines; one slice (PR) pe
 - L3: Docker not installed → tests are unit tests with mocks (no Testcontainers); runtime against Postgres/RabbitMQ not verifiable locally.
 - L4: Delivery choice: "Cadena sobre rama feature (Recomendado)" → `chain_strategy=feature-branch-chain`.
 - L5: Spring AI 2.0.1 requires Jackson 3 / Boot 4 → chose Boot 4.0.8 (within "3.5+ / 4.0").
+- L6 (conventions, binding for all tasks):
+  - Build: export `JAVA_HOME="C:\Program Files\Java\jdk-25"` and prepend `/c/Program Files/Java/jdk-25/bin` to PATH before `./mvnw` (shell may still default to JDK 21). Results: `target/surefire-reports/*.xml`.
+  - Boot 4 / libs: Jackson 3 (`tools.jackson.databind.json.JsonMapper` bean is autoconfigured), Hibernate 7, Spring Security 7, Spring AMQP 4 (`JacksonJsonMessageConverter`), OpenPDF 3 packages `org.openpdf.text.*`, graphql-java 25 (custom scalars in `shared/infrastructure/config/GraphQlScalarConfig`).
+  - Tests: Docker absent. Real PostgreSQL 18 via zonky `EmbeddedPostgresSupport` (test support). Unit tests with Mockito; integration via `@SpringBootTest` + embedded PG + `ExecutionGraphQlServiceTester`; RabbitMQ listeners `auto-startup=false` and outgoing ports mocked with `@MockitoBean`.
+  - Domain (`*/domain/model`): plain Java, no Spring/JPA; UUIDs generated in domain (`UUID.randomUUID()`); validation throws `BusinessRuleException` (Spanish messages); not found → `ResourceNotFoundException`. Amounts use `shared.domain.vo.Money` in the domain, `BigDecimal` at JPA/GraphQL edges. Time via injected `java.time.Clock` (zone America/La_Paz), `OffsetDateTime` for timestamptz.
+  - Application: one `@Service` per use case (`ejecutar(...)`), commands as records in `application/command`, ports in `application/port`; `@Transactional` here. Audit through `configsecurity.application.usecase.RegistrarAuditoriaUseCase.registrar(accion, entidad, entidadId, Map)`.
+  - Infrastructure persistence: `*JpaEntity` + Spring Data `*JpaRepository` + adapter `@Component` implementing the domain repository; entities insert `created_at` explicitly; JSONB via `@JdbcTypeCode(SqlTypes.JSON)`; `ddl-auto: validate`.
+  - Presentation: `@Controller` with `@QueryMapping`/`@MutationMapping`, `@PreAuthorize("hasAnyRole(...)")`; dev mode (`erp.security.dev-mode=true`) runs as anonymous principal `admin` with roles ADMIN,CAJERO,RECEPCIONISTA,ODONTOLOGO.
+  - Generated artifacts (code, comments, identifiers) in English except domain names that mirror the Spanish schema/GraphQL contract; user-facing error messages in Spanish.

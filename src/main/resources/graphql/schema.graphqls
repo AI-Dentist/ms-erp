@@ -1,0 +1,310 @@
+scalar UUID
+scalar BigDecimal
+scalar Date
+scalar DateTime
+
+type Query {
+    obtenerConfiguracionEmpresa: EmpresaConfig!
+    listarUsuarios: [Usuario!]!
+    listarRoles: [Rol!]!
+    listarAuditLogs(limite: Int = 50): [AuditLog!]!
+
+    listarPacientes(busqueda: String): [Paciente!]!
+    obtenerPacientePorId(id: UUID!): Paciente
+    listarOdontologos(soloActivos: Boolean = true): [Odontologo!]!
+    listarEspecialidades: [Especialidad!]!
+    listarConsultorios: [Consultorio!]!
+    listarServiciosOdontologicos(especialidadId: UUID): [ServicioOdontologico!]!
+
+    listarOrdenesCobro(estado: EstadoOrdenCobro, pacienteId: UUID): [OrdenCobro!]!
+    obtenerOrdenCobroDetalle(id: UUID!): OrdenCobro
+    listarCuotasPendientesPorPaciente(pacienteId: UUID!): [CuotaPago!]!
+    obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!): ResumenFlujoCaja!
+
+    generarReporteInteligente(pregunta: String!): ReporteGenerativoResponse!
+}
+
+type Mutation {
+    actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
+    crearUsuario(input: CrearUsuarioInput!): Usuario!
+    crearPaciente(input: CrearPacienteInput!): Paciente!
+    crearEspecialidad(codigo: String!, nombre: String!, descripcion: String): Especialidad!
+    crearOdontologo(input: CrearOdontologoInput!): Odontologo!
+    crearConsultorio(input: CrearConsultorioInput!): Consultorio!
+    crearServicioOdontologico(input: CrearServicioInput!): ServicioOdontologico!
+
+    crearOrdenCobroManual(input: CrearOrdenCobroInput!): OrdenCobro!
+    configurarPlanDePagos(input: ConfigurarPlanPagosInput!): OrdenCobro!
+
+    cobrarCuotaEnEfectivo(input: CobrarEfectivoInput!): Recibo!
+    generarQrPagoFacil(cuotaId: UUID!, ciNitCliente: String!, razonSocialCliente: String!): TransaccionQr!
+    simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
+
+    registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
+}
+
+enum ModalidadPago { CONTADO CREDITO }
+enum EstadoOrdenCobro { PENDIENTE PARCIAL PAGADO ANULADO }
+enum EstadoCuota { PENDIENTE PAGADA VENCIDA ANULADA }
+enum TipoMovimientoCaja { INGRESO EGRESO }
+enum MetodoPago { EFECTIVO QR_PAGOFACIL TRANSFERENCIA }
+
+type EmpresaConfig {
+    id: UUID!
+    nombreComercial: String!
+    razonSocial: String!
+    nit: String!
+    direccion: String!
+    telefonoContacto: String!
+    emailContacto: String
+    monedaSimbolo: String!
+}
+
+type Rol {
+    id: UUID!
+    codigo: String!
+    nombre: String!
+    permisos: [String!]!
+}
+
+type Usuario {
+    id: UUID!
+    username: String!
+    email: String!
+    nombreCompleto: String!
+    rol: Rol!
+    activo: Boolean!
+}
+
+type AuditLog {
+    id: UUID!
+    accion: String!
+    entidadAfectada: String!
+    entidadId: UUID
+    detalleJson: String
+    createdAt: DateTime!
+}
+
+type Paciente {
+    id: UUID!
+    ciNit: String!
+    nombres: String!
+    apellidos: String!
+    telefonoWhatsapp: String!
+    email: String
+    direccion: String
+}
+
+type Especialidad {
+    id: UUID!
+    codigo: String!
+    nombre: String!
+    descripcion: String
+}
+
+type Odontologo {
+    id: UUID!
+    ci: String!
+    matriculaProfesional: String!
+    nombres: String!
+    apellidos: String!
+    telefono: String!
+    email: String
+    porcentajeComision: BigDecimal!
+    especialidades: [Especialidad!]!
+}
+
+type Consultorio {
+    id: UUID!
+    codigo: String!
+    nombre: String!
+    ubicacion: String
+    estado: String!
+}
+
+type ServicioOdontologico {
+    id: UUID!
+    codigo: String!
+    nombre: String!
+    descripcion: String
+    precioBaseBs: BigDecimal!
+    especialidad: Especialidad
+}
+
+type OrdenCobro {
+    id: UUID!
+    paciente: Paciente!
+    odontologo: Odontologo
+    consultaExternaId: UUID
+    modalidadPago: ModalidadPago!
+    montoSubtotalBs: BigDecimal!
+    descuentoBs: BigDecimal!
+    montoTotalBs: BigDecimal!
+    saldoPendienteBs: BigDecimal!
+    cantidadCuotas: Int!
+    estado: EstadoOrdenCobro!
+    items: [OrdenCobroItem!]!
+    cuotas: [CuotaPago!]!
+    createdAt: DateTime!
+}
+
+type OrdenCobroItem {
+    id: UUID!
+    servicio: ServicioOdontologico!
+    piezaDental: String
+    cantidad: Int!
+    precioUnitarioBs: BigDecimal!
+    subtotalBs: BigDecimal!
+}
+
+type CuotaPago {
+    id: UUID!
+    numeroCuota: Int!
+    montoCuotaBs: BigDecimal!
+    fechaVencimiento: Date!
+    estado: EstadoCuota!
+    fechaPago: DateTime
+}
+
+type TransaccionQr {
+    id: UUID!
+    cuotaId: UUID!
+    pagofacilTransactionId: String!
+    qrImagenBase64: String!
+    montoBs: BigDecimal!
+    estado: String!
+    fechaExpiracion: DateTime
+}
+
+type MovimientoCaja {
+    id: UUID!
+    tipoMovimiento: TipoMovimientoCaja!
+    categoria: String!
+    metodoPago: MetodoPago!
+    montoBs: BigDecimal!
+    descripcion: String!
+    fechaMovimiento: DateTime!
+    recibo: Recibo
+}
+
+type Recibo {
+    id: UUID!
+    numeroRecibo: String!
+    ciNitCliente: String!
+    razonSocialCliente: String!
+    concepto: String!
+    montoTotalBs: BigDecimal!
+    pdfUrlS3: String
+    enviadoWhatsapp: Boolean!
+    fechaEmision: DateTime!
+}
+
+type ResumenFlujoCaja {
+    totalIngresosBs: BigDecimal!
+    totalEgresosBs: BigDecimal!
+    saldoNetoBs: BigDecimal!
+    movimientos: [MovimientoCaja!]!
+}
+
+type ReporteGenerativoResponse {
+    reporteId: UUID!
+    preguntaOriginal: String!
+    explicacionNatural: String!
+    consultaSqlEjecutada: String!
+    columnas: [String!]!
+    filasJson: String!
+    tipoGraficoSugerido: String!
+    urlDescargaExcel: String!
+    urlDescargaPdf: String!
+}
+
+input EmpresaConfigInput {
+    nombreComercial: String!
+    razonSocial: String!
+    nit: String!
+    direccion: String!
+    telefonoContacto: String!
+    emailContacto: String
+}
+
+input CrearUsuarioInput {
+    rolCodigo: String!
+    username: String!
+    email: String!
+    nombreCompleto: String!
+    password: String!
+}
+
+input CrearPacienteInput {
+    ciNit: String!
+    nombres: String!
+    apellidos: String!
+    fechaNacimiento: Date
+    genero: String
+    telefonoWhatsapp: String!
+    email: String
+    direccion: String
+}
+
+input CrearOdontologoInput {
+    ci: String!
+    matriculaProfesional: String!
+    nombres: String!
+    apellidos: String!
+    telefono: String!
+    email: String
+    porcentajeComision: BigDecimal!
+    especialidadesIds: [UUID!]!
+}
+
+input CrearConsultorioInput {
+    codigo: String!
+    nombre: String!
+    ubicacion: String
+}
+
+input CrearServicioInput {
+    especialidadId: UUID
+    codigo: String!
+    nombre: String!
+    descripcion: String
+    precioBaseBs: BigDecimal!
+}
+
+input OrdenCobroItemInput {
+    servicioId: UUID!
+    piezaDental: String
+    cantidad: Int!
+}
+
+input CrearOrdenCobroInput {
+    pacienteId: UUID!
+    odontologoId: UUID
+    items: [OrdenCobroItemInput!]!
+    descuentoBs: BigDecimal = 0
+    observaciones: String
+}
+
+input ConfigurarPlanPagosInput {
+    ordenCobroId: UUID!
+    modalidadPago: ModalidadPago!
+    descuentoBs: BigDecimal = 0
+    cantidadCuotas: Int!
+    fechaPrimeraCuota: Date!
+    intervaloDias: Int = 30
+}
+
+input CobrarEfectivoInput {
+    cuotaId: UUID!
+    usuarioCajeroId: UUID!
+    ciNitCliente: String!
+    razonSocialCliente: String!
+}
+
+input RegistrarEgresoInput {
+    usuarioCajeroId: UUID!
+    categoria: String!
+    metodoPago: MetodoPago!
+    montoBs: BigDecimal!
+    descripcion: String!
+}
