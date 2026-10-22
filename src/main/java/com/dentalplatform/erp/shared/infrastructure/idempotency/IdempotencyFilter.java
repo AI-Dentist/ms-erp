@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 import org.springframework.web.util.WebUtils;
 
@@ -75,6 +76,23 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 
         CachedBodyRequest cachedRequest = new CachedBodyRequest(request);
         String operation = fingerprint(request.getMethod(), request.getRequestURI(), cachedRequest.body);
+        if (request.getUserPrincipal() instanceof JwtAuthenticationToken authentication) {
+            // Display usernames are mutable/nonunique. Bind replay to the validated issuer+subject
+            // and effective authorities so a later role downgrade cannot replay privileged data.
+            var jwt = authentication.getToken();
+            String issuer = jwt.getClaimAsString("iss");
+            // A token without sub must not share an identity with other subject-less tokens.
+            String subject = jwt.getSubject() == null ? jwt.getTokenValue() : jwt.getSubject();
+            StringBuilder scope = new StringBuilder(operation);
+            for (String value : new String[]{issuer, subject}) {
+                scope.append('|').append(value.length()).append(':').append(value);
+            }
+            authentication.getAuthorities().stream().map(a -> a.getAuthority()).sorted()
+                    .forEach(value -> scope.append('|').append(value.length()).append(':').append(value));
+            // Keep both the existing 100-character key limit and operation column limit.
+            operation = fingerprint(request.getMethod(), request.getRequestURI(),
+                    scope.toString().getBytes(StandardCharsets.UTF_8));
+        }
         ClaimResult claim = store.claim(key, operation, clock.instant().plus(ttl));
 
         switch (claim.status()) {

@@ -17,7 +17,9 @@ docker compose up -d
 
 Compose inicia PostgreSQL, RabbitMQ y MinIO con credenciales **solo locales**. Flyway aplica las migraciones al arrancar. GraphQL: `http://localhost:8081/graphql`; GraphiQL, únicamente en `dev`: `/graphiql`.
 
-**No exponga `dev` a redes no confiables:** omite Keycloak y cada petición anónima actúa como `admin` con todos los roles. Fuera de `dev`, configure `KEYCLOAK_ISSUER_URI` y use JWT válidos. No reutilice credenciales de Compose en producción.
+**No exponga `dev` a redes no confiables:** omite Keycloak y cada petición anónima actúa como `admin` con todos los roles. Este bypass requiere la configuración explícita existente `erp.security.dev-mode=true` (el perfil `dev` la activa); no la habilite en despliegues protegidos. Por defecto, o con `false`, se exige JWT. No reutilice credenciales de Compose en producción.
+
+Fuera de `dev`, configure `KEYCLOAK_ISSUER_URI` con el issuer exacto del realm. El servidor consulta su discovery/JWKS y valida firma, issuer y expiración; necesita conectividad al issuer. Los roles proceden de `realm_access.roles`, el nombre principal de `preferred_username` y la identidad de Keycloak de `sub`. El contrato actual no impone un audience adicional. Envíe `Authorization: Bearer <token>`; token ausente/inválido devuelve 401. Rol insuficiente devuelve 403 en REST; GraphQL mantiene HTTP 200 con error `FORBIDDEN`. Compose no aprovisiona Keycloak ni un realm.
 
 | Configuración | Variables |
 |---|---|
@@ -84,14 +86,44 @@ Use el ID e importe realmente almacenados y una fecha dentro de la vigencia del 
 
 ## Idempotencia y resultados ambiguos
 
-En POST con `Idempotency-Key`, una respuesta exitosa se conserva y se reproduce para la misma ruta y cuerpo; otra solicitud en curso devuelve 409 y otro contenido devuelve 422. El callback PagoFácil queda excluido: su deduplicación usa el ID de transacción y siempre requiere autenticación.
+En POST con `Idempotency-Key` (1–100 caracteres), una respuesta exitosa se conserva y se reproduce para la misma ruta y cuerpo. Con JWT, también debe coincidir **issuer + subject + autoridades efectivas**: otro principal o un cambio de roles devuelve 422, nunca datos almacenados del usuario anterior. Un cambio solo de `preferred_username` no cambia la identidad. Otra solicitud coincidente en curso devuelve 409 y otro contenido devuelve 422. El comportamiento anónimo de `dev` no cambia. Las claves JWT anteriores a esta vinculación también pueden devolver 422; reconcilie su resultado antes de reintentar, sin eliminar automáticamente claims pendientes. El callback PagoFácil queda excluido: su deduplicación usa el ID de transacción y siempre requiere autenticación.
 
 Solo las respuestas completadas caducan (24 horas por defecto). **Las claves en curso no caducan ni se recuperan automáticamente**, aunque venza ese plazo: un timeout o error servlet no demuestra que la mutación haya dejado de ejecutarse. La finalización servlet sin respuesta capturada también conserva la clave; la finalización posterior a una respuesta exitosa no elimina su replay. El listener se registra de nuevo en cada ciclo asíncrono.
 
 Se mantiene el contrato existente: una respuesta fallida (incluidos errores GraphQL) o un fallo que se desenrolla por el filtro libera la clave. Esto no demuestra por sí solo que una mutación no haya hecho commit. Ante un resultado ambiguo, compruebe el estado de negocio y reconcilie manualmente antes de decidir un reintento; no use otra clave para eludir un 409. No hay un endpoint ni comando automático de reconciliación. El filtro no garantiza ejecución exactamente una vez tras un crash o commit de resultado desconocido.
 
+## Recibos, eventos y n8n
+
+- **PDF privados:** el modo local explícito guarda `file:` bajo el directorio temporal del sistema (no es una URL web). Para MinIO configure `ERP_RECEIPTS_MODE=minio`, endpoint, bucket privado preaprovisionado y credenciales de servicio según [docs/minio-receipts.md](docs/minio-receipts.md). GraphQL entrega enlaces presignados solo a ADMIN/CAJERO; no se añade REST. Un fallo de PDF/storage no revierte el pago y no tiene recuperación durable automática: no repita el cobro para reparar un PDF.
+- **Catálogos:** V6 registra los eventos en el outbox junto al agregado/auditoría. El dispatcher exige confirmación ACK sin retorno obligatorio y reintenta con backoff conservando `eventId`. Entrega al menos una vez, no exactamente una vez: consumidores deben deduplicar. Configuración y operación: [docs/catalog-outbox.md](docs/catalog-outbox.md).
+- **n8n optativo:** `N8N_ENABLED=false` no realiza HTTP. Para activarlo configure `N8N_WEBHOOK_URL` en un destino de confianza. Envía solo evento, UUID y número de recibo, después del commit; no datos del paciente. Los timeouts `erp.n8n.connect-timeout-ms`/`read-timeout-ms` son 1000/2000 ms por defecto (acotados a 100–5000 ms). Un error/timeout se registra sin revertir cuota, saldo, movimiento ni recibo; no hay reintento durable. No habilite trazas de payloads.
+
+Se mantienen GraphQL y las dos únicas rutas REST de negocio: callback local PagoFácil y exportación de reportes.
+
 ## Verificación y límites de la evidencia
 
-`./mvnw test` usa PostgreSQL 18 embebido y modelos/puertos simulados, sin llamadas reales a IA ni PagoFácil. Las pruebas cubren preguntas con fechas/categorías a través del adaptador, resultados SQL, permisos de lectura, rechazos sin cambios de filas/secuencias, propiedad/TTL y binarios PDF/XLSX.
+`./mvnw test` no requiere Docker, Keycloak ni servicios externos: usa PostgreSQL 18 embebido, puertos IA/Rabbit simulados y listeners HTTP loopback reales para JWT/JWKS, MinIO SDK y n8n. Requiere dependencias Maven/binaries ya descargados para ejecutarse sin red. No instala un modelo IA local ni llama al proveedor real PagoFácil.
 
-No se ha probado aquí el proveedor IA real, JWT productivo, entrega RabbitMQ por red, Compose en ejecución ni el script de operador vía `psql`. La cota de 500 filas tiene prueba con JDBC simulado; el timeout de bloqueo sí se verifica contra PostgreSQL real. El hosting del proveedor no constituye un requisito adicional.
+| Frontera | Evidencia local | Pendiente de aceptación live |
+|---|---|---|
+| JWT | RSA efímera, discovery/JWKS HTTP, bearer contra cadena no-dev: firma/issuer/expiración 401; permisos REST/GraphQL; principal firmado; replay aislado por identidad/roles; rechazos sin cambios de filas/secuencias | Realm y despliegue Keycloak reales, rotación operacional |
+| n8n | HTTP 500 y stall real; timeout configurado 300 ms, pago retorna antes de 4 s y conserva commit; deshabilitado sin HTTP | Servicio n8n desplegado, saturación sostenida |
+| MinIO | SDK real contra stub HTTP, firma, cuerpo, timeout, referencia persistida y autorización GraphQL | Contenedor real, TLS/IAM del despliegue |
+| RabbitMQ | PostgreSQL/outbox real; ACK/NACK/retorno/timeout/retry simulados | Wire real, caída/reanudación y saga por listener |
+| Reportes | SQL, permisos, rechazos sin cambios, propiedad/TTL, PDF/XLSX y bloqueo PostgreSQL | Proveedor IA y script de operador vía `psql` |
+
+Ejecución local T11: `./mvnw test` pasó **231/231** (0 fallos/errores/skips, incluye T9/T10/T11); `./mvnw clean compile` compiló **183 fuentes** con exit 0. El enfocado JWT/n8n/idempotencia pasó 25/25 y compiló también `LiveIntegrationsIT` con el perfil activo. `clean` elimina los XML previos de `target`; estos totales proceden de la salida observada, no de una ejecución live.
+
+### Integraciones live optativas (no ejecutadas aquí)
+
+Requiere Docker Engine accesible, JDK 25 y acceso a las imágenes/dependencias (o caché previa). No necesita Compose ni credenciales/puertos ambientales:
+
+```bash
+bash scripts/verify-integrations.sh
+# Equivalente directo, sin preflight CLI:
+./mvnw -Plive-integrations verify
+```
+
+El perfil ejecuta la suite ordinaria y Failsafe `LiveIntegrationsIT`: contenedores desechables RabbitMQ 4.1.4 y MinIO con puertos aleatorios y credenciales efímeras. Usa los puertos/dispatcher de la aplicación para upload, GET autenticado, GET presignado, denegación anónima, confirmación outbox, caída/reinicio del broker con retry y entrega saga. Solo controla sus propios contenedores; cierre al finalizar y Ryuk para recuperación. Arranque máximo 120 s por contenedor, comandos broker 30 s, esperas 20 s y fork 600 s. No utilice este harness contra servicios compartidos.
+
+**Docker no está instalado en este entorno:** se compiló el harness; no se ejecutaron los dos tests live ni Compose. El script falla con exit 1 si falta Docker, y el perfil directo falla si no puede crear contenedores: no hay skip silencioso. Resultados ordinarios: `target/surefire-reports`; live: `target/failsafe-reports`. Esta evidencia no equivale a preparación completa para producción.
