@@ -51,7 +51,7 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
-                        // PagoFacil cannot send a Keycloak token; the webhook verifies its own shared secret
+                        // Local mock callback authenticates its own secret on every call; real provider is unsupported.
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/pagofacil").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))

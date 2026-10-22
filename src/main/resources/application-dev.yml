@@ -11,6 +11,7 @@ erp:
     dev-mode: true
   pagofacil:
     mock-enabled: true
+    dev-simulation-enabled: true
 
 logging:
   level:

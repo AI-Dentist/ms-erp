@@ -1,6 +1,7 @@
 package com.dentalplatform.erp.financebilling.application.usecase;
 
 import com.dentalplatform.erp.configsecurity.application.usecase.RegistrarAuditoriaUseCase;
+import com.dentalplatform.erp.financebilling.application.port.N8nNotificationPort;
 import com.dentalplatform.erp.financebilling.domain.model.*;
 import com.dentalplatform.erp.financebilling.domain.repository.*;
 import com.dentalplatform.erp.shared.domain.exception.ResourceNotFoundException;
@@ -31,10 +32,12 @@ public class RegistrarCobroCuotaService {
     private final RegistrarAuditoriaUseCase auditoria;
     private final CompletarPdfReciboService pdf;
     private final Clock clock;
+    private final N8nNotificationPort notifications;
 
     public RegistrarCobroCuotaService(OrdenCobroRepository orders, MovimientoCajaRepository movements,
                                       ReciboRepository receipts, ValidarReferenciasFinanzasService referencias,
-                                      RegistrarAuditoriaUseCase auditoria, CompletarPdfReciboService pdf, Clock clock) {
+                                      RegistrarAuditoriaUseCase auditoria, CompletarPdfReciboService pdf, Clock clock,
+                                      N8nNotificationPort notifications) {
         this.orders = orders;
         this.movements = movements;
         this.receipts = receipts;
@@ -42,6 +45,7 @@ public class RegistrarCobroCuotaService {
         this.auditoria = auditoria;
         this.pdf = pdf;
         this.clock = clock;
+        this.notifications = notifications;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -67,6 +71,11 @@ public class RegistrarCobroCuotaService {
                 catch (RuntimeException e) {
                     // The legal receipt row already exists. A missing PDF never reverses a committed payment.
                     log.warn("Could not generate/store PDF for receipt {}", committedReceipt.id(), e);
+                }
+                try { notifications.notificar(committedReceipt); }
+                catch (RuntimeException e) {
+                    // Do not log URLs, headers, response bodies or exception text from an external service.
+                    log.warn("Could not notify n8n for committed receipt {}", committedReceipt.id());
                 }
             }
         });

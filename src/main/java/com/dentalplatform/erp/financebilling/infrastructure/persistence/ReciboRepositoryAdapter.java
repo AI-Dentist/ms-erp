@@ -21,6 +21,11 @@ public class ReciboRepositoryAdapter implements ReciboRepository {
     }
 
     @Override
+    public Optional<Recibo> buscarPorCuota(UUID cuotaId) {
+        return repository.buscarPorCuota(cuotaId).map(ReciboJpaEntity::toDomain);
+    }
+
+    @Override
     public Optional<Recibo> buscarPorMovimiento(UUID movimientoId) {
         return repository.findByMovimientoCajaId(movimientoId).map(ReciboJpaEntity::toDomain);
     }

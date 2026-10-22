@@ -8,4 +8,5 @@ public interface ReciboRepository {
     long siguienteNumero();
     Recibo guardar(Recibo recibo);
     Optional<Recibo> buscarPorMovimiento(UUID movimientoId);
+    Optional<Recibo> buscarPorCuota(UUID cuotaId);
 }

@@ -19,7 +19,7 @@ Stack decision: Java 25, Spring Boot 4.0.8, Spring AI 2.0.1 (Jackson 3), Flyway,
 - [x] T2 — S2, S8, S9 — inline (shared kernel, domain, application) + gentle-ai-worker (persistence, security adapters, GraphQL controller, integration tests) — Phase 2 shared kernel + configsecurity — commits: f4f2002 + 29de2ee (fix). Native review: high → lineage review-dd05b8062603753c found CRITICAL R3-idempotency-async-graphql (empty body stored on async dispatch) → corrected with RED/GREEN + differential; full-scope re-review hit lens_context_budget_exceeded → reduced-scope review-7a2a61df747b6c7c on 29de2ee APPROVED and acknowledged (burned). 50 tests green.
 - [x] T3 — S3, S8, S9 — gentle-ai-worker — Phase 3 mastercatalog + RabbitMQ publisher (afterCommit publish, DLX declared) — commit: see feat(mastercatalog); 92 tests green. Note: publisher logs and drops on broker failure after commit (no outbox) — accepted for now.
 - [x] T4 — S4, S5, S8, S9 — gentle-ai-worker + independent gentle-ai-verify — Phase 4a orders, payment plans, cash payment, cashflow, PDF receipt, saga listener — commit: next feat(financebilling). Worker and verifier: 114 tests pass, clean compile exit 0. Verifier also ran 5 isolated public-entry probes (concurrency, rollback, immutable duplicate state, PDF postcommit boundary, plan replacement). Broker wire delivery and production JWT not exercised.
-- [ ] T5 — S4, S5, S9 — inline — Phase 4b PagoFácil QR (mock), webhook REST, n8n notification — commit: _
+- [x] T5 — S4, S5, S9 — gentle-ai-worker + gentle-ai-verify — Phase 4b LOCAL mock QR, authenticated mock webhook, n8n — commit: next feat(financebilling). Writer 128/128; independent verifier after user-authorized scratch import correction: 131/131 exit 0, including rejected callbacks preserving rows/counters, mixed cash/QR and distinct QR races. Compile exit 0. Real PagoFacil remains unsupported (mock=false fails closed); production contract/signature/acceptance proof required.
 - [ ] T6 — S6, S7, S9 — inline — Phase 5 Text-to-SQL + Excel/PDF export REST — commit: _
 - [ ] T7 — S2 — inline — Follow-up from T2 review advisories (R3-error-not-released, R3-pending-key-stranded, R4-001, R4-002): release the idempotency key on async timeout/error (AsyncListener) and reclaim stale in-progress keys; strengthen async error test — commit: _
 
@@ -27,6 +27,7 @@ Delivery: feature-branch-chain; original forecast ~6000 authored lines exceeded.
 
 ## Log
 - L1 (user): "Revisa el archivo SPECS.md y empieza a implementar"
+- L7 (user): "Si, continúa sin parar" — authorized one corrected scratch verification run; 131 tests pass independently. Remaining limits: no live provider, broker wire, production JWT, measured n8n saturation or full baseline runtime differential.
 - L2: Only JDK 17/21 present; user chose "Instalo JDK 25 yo"; then "Listo" — jdk-25 installed (25.0.5).
 - L3: Docker not installed → tests are unit tests with mocks (no Testcontainers); runtime against Postgres/RabbitMQ not verifiable locally.
 - L4: Delivery choice: "Cadena sobre rama feature (Recomendado)" → `chain_strategy=feature-branch-chain`.

@@ -21,7 +21,14 @@ public class IdempotencyConfig {
     FilterRegistrationBean<IdempotencyFilter> idempotencyFilter(IdempotencyStore store, Clock clock,
                                                                 @Value("${erp.idempotency.ttl-hours:24}") long ttlHours) {
         FilterRegistrationBean<IdempotencyFilter> registration =
-                new FilterRegistrationBean<>(new IdempotencyFilter(store, Duration.ofHours(ttlHours), clock));
+                new FilterRegistrationBean<>(new IdempotencyFilter(store, Duration.ofHours(ttlHours), clock) {
+                    @Override
+                    protected boolean shouldNotFilter(jakarta.servlet.http.HttpServletRequest request) {
+                        // Authenticate every callback, even retries. Transaction ID dedup is authoritative here.
+                        return (request.getContextPath() + "/api/v1/webhooks/pagofacil").equals(request.getRequestURI())
+                                || super.shouldNotFilter(request);
+                    }
+                });
         registration.setOrder(FILTER_ORDER);
         registration.setDispatcherTypes(DispatcherType.REQUEST, DispatcherType.ASYNC);
         registration.addUrlPatterns("/graphql", "/api/*");
