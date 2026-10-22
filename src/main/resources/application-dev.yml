@@ -1,0 +1,17 @@
+# Local development profile: no Keycloak required, GraphiQL enabled, PagoFacil mocked.
+spring:
+  graphql:
+    graphiql:
+      enabled: true
+  jpa:
+    show-sql: false
+
+erp:
+  security:
+    dev-mode: true
+  pagofacil:
+    mock-enabled: true
+
+logging:
+  level:
+    com.dentalplatform.erp: DEBUG

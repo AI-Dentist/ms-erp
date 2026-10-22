@@ -1,0 +1,56 @@
+name: dental-erp-ms1
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: erp-postgres
+    environment:
+      POSTGRES_DB: dental_erp
+      POSTGRES_USER: erp_user
+      POSTGRES_PASSWORD: erp_password
+      TZ: America/La_Paz
+    ports:
+      - "5432:5432"
+    volumes:
+      # PostgreSQL 18 images keep PGDATA under a versioned subdirectory of /var/lib/postgresql
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_user -d dental_erp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: erp-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: erp_user
+      RABBITMQ_DEFAULT_PASS: erp_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: erp-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: erp_minio
+      MINIO_ROOT_PASSWORD: erp_minio_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  minio-data:

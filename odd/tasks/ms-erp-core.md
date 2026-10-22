@@ -1,0 +1,32 @@
+# Feature: ms-erp-core
+Implement backend MS1 `dental-erp-ms1` from `SPECS.md` following the 5 phases of `AGENTS.md`.
+Stack decision: Java 25, Spring Boot 4.0.8, Spring AI 2.0.1 (Jackson 3), Flyway, RabbitMQ, GraphQL. Delivery: feature-branch-chain on `feat/ms-erp-core`.
+
+## Specs
+- S1 (AGENTS §5 Fase 1): "Crear `pom.xml`, `docker-compose.yml` (PostgreSQL 18, RabbitMQ 4, MinIO) y las migraciones Flyway `V1__init_erp_schema.sql` y `V2__seed_bolivia_data.sql` (con datos realistas de Santa Cruz de la Sierra, Bolivia, en Bolivianos `Bs`)." V1 = SPECS.md §2 verbatim.
+- S2 (AGENTS §5 Fase 2): "Implementar `Money`, filtro de `Idempotency-Key`, perfil de seguridad local (`dev`) y el módulo de Empresa, Usuarios, Roles, Permisos y Logs."
+- S3 (AGENTS §5 Fase 3): "Implementar Pacientes, Odontólogos, Especialidades, Consultorios y Servicios Odontológicos, emitiendo sus eventos de sincronización por RabbitMQ." Event payloads = SPECS.md §3.1, exchange `dental.topic.exchange`.
+- S4 (AGENTS §5 Fase 4): "Implementar el listener de `clinica.consulta.finalizada`, creación de órdenes de cobro, fraccionamiento en cuotas (Contado/Crédito), adaptador PagoFácil QR (con modo Mock configurable), flujo de caja, emisión de recibos en PDF y notificación webhook a n8n." Queue `erp.consulta.finalizada.queue` (SPECS.md §3.2).
+- S5 (AGENTS §4.2): "Todo cobro de cuota (Efectivo o confirmación QR) debe actualizar el estado de la cuota, descontar el saldo de la orden de cobro, registrar el ingreso en `movimientos_caja` y emitir el `recibo` dentro de una misma transacción `@Transactional`."
+- S6 (AGENTS §5 Fase 5): "Implementar el motor Text-to-SQL con Spring AI y la exportación dinámica a Excel (`.xlsx`) y PDF."
+- S7 (AGENTS §4.3): "El caso de uso que convierte lenguaje natural a SQL debe validar mediante expresión regular y transacción ` readOnly = true ` que la consulta generada sea exclusivamente un `SELECT`, bloqueando cualquier intento de `DROP`, `DELETE`, `UPDATE`, `INSERT` o `ALTER`."
+- S8 (AGENTS §4.1): "**Prohibido importar anotaciones de Spring o JPA/Hibernate dentro de `domain.model`.**" Packages per SPECS.md §1.
+- S9 (AGENTS §2): GraphQL contract = SPECS.md §4 `schema.graphqls`; only REST: "`POST /api/v1/webhooks/pagofacil`" and "`GET /api/v1/reports/export/{format}`".
+- S10 (AGENTS §6): "Compilar y verificar: `./mvnw clean compile`" / "Ejecutar pruebas: `./mvnw test`".
+
+## Tasks
+- [ ] T1 — S1, S10 — inline — Phase 1 infra: mvnw, pom, docker-compose, application.yml, V1/V2 — commit: _
+- [ ] T2 — S2, S8, S9 — inline — Phase 2 shared kernel + configsecurity — commit: _
+- [ ] T3 — S3, S8, S9 — inline — Phase 3 mastercatalog + RabbitMQ publisher — commit: _
+- [ ] T4 — S4, S5, S8, S9 — inline — Phase 4a orders, payment plans, cash payment, cashflow, PDF receipt, saga listener — commit: _
+- [ ] T5 — S4, S5, S9 — inline — Phase 4b PagoFácil QR (mock), webhook REST, n8n notification — commit: _
+- [ ] T6 — S6, S7, S9 — inline — Phase 5 Text-to-SQL + Excel/PDF export REST — commit: _
+
+Delivery: feature-branch-chain, forecast ~6000 authored lines; one slice (PR) per task commit.
+
+## Log
+- L1 (user): "Revisa el archivo SPECS.md y empieza a implementar"
+- L2: Only JDK 17/21 present; user chose "Instalo JDK 25 yo"; then "Listo" — jdk-25 installed (25.0.5).
+- L3: Docker not installed → tests are unit tests with mocks (no Testcontainers); runtime against Postgres/RabbitMQ not verifiable locally.
+- L4: Delivery choice: "Cadena sobre rama feature (Recomendado)" → `chain_strategy=feature-branch-chain`.
+- L5: Spring AI 2.0.1 requires Jackson 3 / Boot 4 → chose Boot 4.0.8 (within "3.5+ / 4.0").
