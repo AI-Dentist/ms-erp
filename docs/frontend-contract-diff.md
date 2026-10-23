@@ -1,0 +1,497 @@
+# Contrato GraphQL: frontend `mf-erp` vs backend `ms-erp`
+
+Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/introspection.json`; ambos se verifican contra el esquema real en `SchemaExportTest` (no pueden desfasarse). Los ejemplos válidos están en `src/test/resources/contract/real-examples.graphql` (apéndice al final, validados por `FrontendExamplesValidationTest`). La instantánea de las operaciones del frontend está en `src/test/resources/contract/frontend-operations.graphql`.
+
+**Regla:** no se tocó ningún contrato del backend. Todo lo de abajo es "qué debe adaptar el frontend", salvo la lista de operaciones sin equivalente, que requiere una decisión.
+
+## Resumen
+
+**37 operaciones del frontend validadas: 2 válidas, 35 inválidas** contra el esquema servido.
+
+| Estado | Operaciones |
+| --- | --- |
+| OK (válidas tal cual) | 2: `listarEspecialidades`, `generarReporteInteligente` (ver semántica abajo) |
+| Existe con otra forma → el frontend se adapta | 21 (nombres de campos/args/inputs/enums/tipos) |
+| NO EXISTE en backend | 14 |
+
+### Operaciones que el backend NO ofrece
+
+| Operación del frontend | Recomendación |
+| --- | --- |
+| `obtenerOrdenCobro` | **Adaptar frontend**: usar `obtenerOrdenCobroDetalle(id: UUID!)` (mismo dato, otro nombre). |
+| `listarLogsAuditoria` | **Adaptar frontend**: usar `listarAuditLogs(limite)`. |
+| `obtenerResumenCaja`, `listarMovimientosCaja` | **Adaptar frontend**: una sola llamada `obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!)` devuelve `totalIngresosBs/totalEgresosBs/saldoNetoBs` y `movimientos[]`. |
+| `consultarEstadoQrPagoFacil` | **Adaptar frontend (provisional)**: no hay consulta por transacción. Hacer polling de `obtenerOrdenCobroDetalle { cuotas { estado fechaPago } }`; la cuota pasa a `PAGADA` al confirmarse. Para obtener el recibo, `obtenerFlujoCaja { movimientos { recibo {...} } }`. **Decisión pendiente (usuario):** si se quiere un polling directo y barato, hace falta una operación NUEVA (`consultarEstadoQr(pagofacilTransactionId): TransaccionQr!`). |
+| `actualizarPaciente`, `actualizarOdontologo`, `actualizarEspecialidad`, `actualizarConsultorio`, `actualizarServicioOdontologico` | **Operación NUEVA en backend — decisión pendiente (usuario).** Hoy el backend solo crea. Sin ellas, las pantallas de edición del frontend no pueden funcionar. |
+| `eliminarPaciente`, `eliminarOdontologo`, `eliminarEspecialidad`, `eliminarConsultorio`, `eliminarServicioOdontologico` | **Operación NUEVA en backend — decisión pendiente (usuario).** Además hay que decidir la semántica (baja lógica vs física; hay referencias desde órdenes de cobro). Sin ellas, ocultar los botones de eliminar. |
+| `actualizarUsuario` | **Operación NUEVA en backend — decisión pendiente (usuario)** (cambio de rol / activar-desactivar). Hoy solo existe `crearUsuario`. |
+
+(Las 14 que "NO EXISTEN" son: `consultarEstadoQrPagoFacil`, `obtenerResumenCaja`, `listarMovimientosCaja`, 6 `actualizar*` y 5 `eliminar*`. `obtenerOrdenCobro` y `listarLogsAuditoria` son renombres y cuentan en las 21 "adaptar".)
+
+## Reglas transversales
+
+| Tema | Frontend | Backend real | Qué cambiar en el frontend |
+| --- | --- | --- | --- |
+| Escalar de ids | `ID!` | `UUID!` (el esquema **no define `ID`**: `Unknown type 'ID'`) | Declarar variables como `UUID!` / `UUID`. En JSON siguen siendo strings. |
+| Montos | `number` | `BigDecimal`: se serializa como **número JSON** (ej. `150.50`); como entrada acepta número o string | OK. Nombres terminan en `Bs` (`montoTotalBs`, `precioBaseBs`…). |
+| Fechas de calendario | `string` | `Date` = `yyyy-MM-dd` (`fechaVencimiento`, `fechaPrimeraCuota`, `fechaNacimiento`) | Enviar/leer `2026-11-15`. |
+| Instantes | `string` | `DateTime` = ISO-8601 **con offset** (`2026-10-22T10:15:30-04:00`); entrada sin offset se rechaza | Enviar offset siempre (`toISOString()` con `Z` es válido). |
+| Rangos de caja | `String!` | `DateTime!` | Cambiar tipo de variables y enviar instantes con offset. |
+| Nulabilidad | campos opcionales | casi todo `!`; opcionales reales: `emailContacto`, `Paciente.email/direccion`, `Odontologo.email`, `Consultorio.ubicacion`, `descripcion`, `OrdenCobro.odontologo/consultaExternaId`, `CuotaPago.fechaPago`, `Recibo.pdfUrlS3`, `TransaccionQr.fechaExpiracion`, `MovimientoCaja.recibo` | Que el frontend tolere más campos no nulos de los que modela no rompe nada. Lo que el frontend marca opcional y el backend exige (`telefonoWhatsapp`, `telefono`) hay que volverlo obligatorio en formularios. |
+| Campos extra del backend | — | Campos `!` que el frontend no pide (`reporteId`, `preguntaOriginal`, `enviadoWhatsapp`…) | Sin problema: GraphQL solo devuelve lo pedido. |
+| Roles (servidor) | — | `ANY_ROLE` = ADMIN/CAJERO/RECEPCIONISTA/ODONTOLOGO; lecturas de catálogos y empresa. `ADMIN`: usuarios, auditoría, reportes, actualizar empresa, crear especialidad/odontólogo/consultorio/servicio. `ADMIN`/`RECEPCIONISTA`: `crearPaciente`. `ADMIN`/`CAJERO`/`RECEPCIONISTA`: lecturas y planes de órdenes de cobro, `crearOrdenCobroManual`, `configurarPlanDePagos`, `obtenerFlujoCaja`. `ADMIN`/`CAJERO`: cobro en efectivo, egreso, QR, simulación, `Recibo.pdfUrlS3`. | Ocultar/deshabilitar acciones según rol; el servidor responde `FORBIDDEN` si no corresponde. |
+| `Idempotency-Key` | UUID por mutación | Filtro en `POST` con la cabecera; sin cabecera la petición pasa sin protección | Enviarla siempre en mutaciones financieras. |
+
+## Catálogos
+
+| Uso en frontend | Contrato real | Estado | Qué cambia el frontend |
+| --- | --- | --- | --- |
+| `Paciente.fechaNacimiento` (query y `PacienteInput`) | `Paciente` **no expone** `fechaNacimiento`; solo existe como entrada en `CrearPacienteInput.fechaNacimiento: Date` | NO EXISTE (lectura) | Quitar de los campos pedidos; enviarla solo al crear. Si se necesita leerla → backend nuevo (decisión pendiente). |
+| `PacienteInput` | `CrearPacienteInput`: `ciNit!, nombres!, apellidos!, fechaNacimiento, genero, telefonoWhatsapp!, email, direccion` | renombrar + nulabilidad | Usar el nombre real; `telefonoWhatsapp` es obligatorio; hay `direccion` y `genero` (no leídos en `Paciente` salvo `direccion`). Ver ejemplo `CrearPaciente`. |
+| `crearPaciente(input: PacienteInput!)`, `$id: ID!` | `crearPaciente(input: CrearPacienteInput!)` | tipo distinto | Cambiar el tipo del input. Sin `actualizarPaciente`/`eliminarPaciente`. |
+| `listarPacientes(busqueda)` | igual, devuelve `[Paciente!]!` | OK (salvo `fechaNacimiento`) | — Ver `ListarPacientes`. |
+| `Odontologo.matricula` | `matriculaProfesional` | renombrar | Cambiar nombre. |
+| `Odontologo.especialidad { id nombre }` | `especialidades: [Especialidad!]!` (lista) | tipo distinto | Pasar a lista; el modelo del frontend admite una sola. |
+| `Odontologo.activo` | no existe; `listarOdontologos(soloActivos: Boolean = true)` filtra | NO EXISTE | Quitar el campo; para ver inactivos pasar `soloActivos: false`. |
+| `OdontologoInput {nombres, apellidos, matricula, telefono?, especialidadId?, activo}` | `CrearOdontologoInput`: `ci!, matriculaProfesional!, nombres!, apellidos!, telefono!, email, porcentajeComision: BigDecimal!, especialidadesIds: [UUID!]!` | renombrar + campos nuevos obligatorios | Agregar `ci`, `porcentajeComision`, lista `especialidadesIds`; quitar `activo`. Ver `CrearOdontologo`. |
+| `Especialidad {id nombre descripcion}` | además `codigo: String!` | campo extra | OK al leer; pedir `codigo` si se muestra. |
+| `crearEspecialidad(input: EspecialidadInput!)` | `crearEspecialidad(codigo: String!, nombre: String!, descripcion: String)` — **argumentos sueltos, no hay input** | argumento distinto | Enviar tres argumentos; `codigo` es obligatorio. Ver `CrearEspecialidad`. |
+| `Consultorio.activo` | `estado: String!` (valor por defecto `DISPONIBLE`) | renombrar + tipo distinto | Mapear `activo = estado === 'DISPONIBLE'` (lectura). Además hay `codigo!`. |
+| `ConsultorioInput {nombre, ubicacion, activo}` | `CrearConsultorioInput {codigo!, nombre!, ubicacion}` | renombrar | `codigo` obligatorio; sin `activo`. Ver `CrearConsultorio`. |
+| `ServicioOdontologico.precioBs` | `precioBaseBs: BigDecimal!` | renombrar | Cambiar nombre. |
+| `ServicioOdontologico.activo` | no existe | NO EXISTE | Quitar. |
+| `ServicioOdontologicoInput` | `CrearServicioInput {especialidadId, codigo!, nombre!, descripcion, precioBaseBs!}` | renombrar | Ver `CrearServicioOdontologico`. `listarServiciosOdontologicos(especialidadId: UUID)` admite filtro. |
+| `actualizar*`/`eliminar*` de paciente, odontólogo, especialidad, consultorio, servicio | no existen | NO EXISTE | Ver tabla de operaciones faltantes. |
+
+## Empresa, usuarios y auditoría
+
+| Uso en frontend | Contrato real | Estado | Qué cambia el frontend |
+| --- | --- | --- | --- |
+| `obtenerConfiguracionEmpresa { nit razonSocial direccion telefono email ciudad }` | `{ id nombreComercial razonSocial nit direccion telefonoContacto emailContacto monedaSimbolo }`, tipo `EmpresaConfig!` (no nulo) | renombrar | `telefono`→`telefonoContacto`, `email`→`emailContacto`; **`ciudad` no existe** (la ciudad va dentro de `direccion`). Nuevo `nombreComercial`. |
+| `ConfiguracionEmpresaInput` | `EmpresaConfigInput {nombreComercial!, razonSocial!, nit!, direccion!, telefonoContacto!, emailContacto}` | renombrar + nulabilidad | `direccion` y `telefonoContacto` son obligatorios. Solo ADMIN. Ver `ActualizarConfiguracionEmpresa`. |
+| `listarUsuarios { rol }` (string) | `rol: Rol!` (objeto: `id codigo nombre permisos`) | tipo distinto | Pedir `rol { codigo nombre }` y usar `rol.codigo`. Solo ADMIN. Hay `email!`. |
+| `actualizarUsuario(id, input {rol, activo})` | no existe; solo `crearUsuario(input: CrearUsuarioInput!)` con `rolCodigo` | NO EXISTE | Ver tabla de operaciones faltantes. |
+| `listarLogsAuditoria(limite)` | `listarAuditLogs(limite: Int = 50)` | renombrar | Solo ADMIN. |
+| `LogAuditoria {id fecha usuario accion entidad detalle}` | `AuditLog {id accion entidadAfectada entidadId detalleJson createdAt}` | renombrar | `fecha`→`createdAt` (`DateTime`), `entidad`→`entidadAfectada`, `detalle`→`detalleJson` (string JSON); **no hay `usuario`**. |
+
+## Órdenes de cobro y cuotas
+
+| Uso en frontend | Contrato real | Estado | Qué cambia el frontend |
+| --- | --- | --- | --- |
+| `obtenerOrdenCobro(id: ID!)` | `obtenerOrdenCobroDetalle(id: UUID!): OrdenCobro` (nullable) | renombrar | Ver `ObtenerOrdenCobroDetalle`. |
+| `listarOrdenesCobro(estado)` | `listarOrdenesCobro(estado: EstadoOrdenCobro, pacienteId: UUID)` | OK (args) | Ver `ListarOrdenesCobro`. |
+| `OrdenCobro.codigo`, `origen`, `concepto` | no existen (hay `id`, `consultaExternaId` si viene de MS2, y `items[]` con servicio) | NO EXISTE | Mostrar `id`/`items`; el "concepto" se arma con `items.servicio.nombre`. |
+| `montoTotal`, `descuento`, `montoNeto` | `montoSubtotalBs`, `descuentoBs`, `montoTotalBs` (= neto), `saldoPendienteBs` | renombrar + semántica distinta | `montoTotal` (frontend, bruto) ≈ `montoSubtotalBs`; `montoNeto` ≈ `montoTotalBs`. |
+| `tipoPago` (`TipoPago`) | `modalidadPago: ModalidadPago!` (`CONTADO`, `CREDITO`) | renombrar | Nombre del campo y del enum. |
+| `fechaCreacion` | `createdAt: DateTime!` | renombrar | — |
+| `Cuota { numero monto }` | `CuotaPago { numeroCuota montoCuotaBs fechaVencimiento estado fechaPago }` | renombrar | — |
+| `EstadoOrdenCobro` `PAGADA`/`ANULADA` | `PENDIENTE PARCIAL PAGADO ANULADO` | enum distinto | `PAGADA`→`PAGADO`, `ANULADA`→`ANULADO`. Enviar `PAGADA` falla con error de enum. |
+| `EstadoCuota` `PENDIENTE PAGADA VENCIDA` | `PENDIENTE PAGADA VENCIDA ANULADA` | enum (extra valor) | Agregar `ANULADA`. |
+| `TipoPago` | `ModalidadPago` | renombrar | — |
+| `MetodoPago` `EFECTIVO QR_PAGOFACIL` | `EFECTIVO QR_PAGOFACIL TRANSFERENCIA` | enum (extra valor) | Agregar `TRANSFERENCIA`. |
+| `crearOrdenCobroManual(input: CrearOrdenCobroManualInput {pacienteId, concepto, servicioIds[], montoTotal})` | `CrearOrdenCobroInput {pacienteId!, odontologoId, items: [{servicioId!, piezaDental, cantidad!}]!, descuentoBs = 0, observaciones}` | tipo distinto + semántica | El monto lo calcula el backend desde el arancel (no se envía `montoTotal`); no hay `concepto`; cada servicio es un ítem con `cantidad`. Ver `CrearOrdenCobroManual`. |
+| `configurarPlanDePagos(input: ConfigurarPlanDePagosInput {ordenCobroId, tipoPago, numeroCuotas, descuento, fechaPrimerVencimiento})` | `ConfigurarPlanPagosInput {ordenCobroId!, modalidadPago!, descuentoBs = 0, cantidadCuotas!, fechaPrimeraCuota: Date!, intervaloDias = 30}` | renombrar (el tipo se llama `ConfigurarPlanPagosInput`, sin "De") | Ver `ConfigurarPlanDePagos`. |
+| `listarCuotasPendientesPorPaciente` | existe en el backend, el frontend no lo usa | extra | Útil para la pantalla de cobros. |
+
+## Caja, cobros, QR y recibos
+
+| Uso en frontend | Contrato real | Estado | Qué cambia el frontend |
+| --- | --- | --- | --- |
+| `cobrarCuotaEnEfectivo(input {cuotaId, ciNit, razonSocial, montoRecibido})` | `CobrarEfectivoInput {cuotaId!, usuarioCajeroId!, ciNitCliente!, razonSocialCliente!}` | renombrar + campo obligatorio nuevo + campo inexistente | `ciNit`→`ciNitCliente`, `razonSocial`→`razonSocialCliente`; **`montoRecibido` no existe** (cobra el monto de la cuota completa; calcular el vuelto en el cliente); **`usuarioCajeroId` (UUID del usuario) es obligatorio**: es el `id` de `Usuario` (p. ej. de `listarUsuarios`, que es solo ADMIN); hoy el frontend no lo tiene. Ver `CobrarCuotaEnEfectivo`. |
+| `Recibo { monto metodoPago ciNit razonSocial urlDescargaPdf }` | `Recibo { id numeroRecibo ciNitCliente razonSocialCliente concepto montoTotalBs pdfUrlS3 enviadoWhatsapp fechaEmision }` | renombrar | `monto`→`montoTotalBs`, `ciNit`→`ciNitCliente`, `razonSocial`→`razonSocialCliente`, `urlDescargaPdf`→`pdfUrlS3`; **`metodoPago` no existe en `Recibo`** (está en `MovimientoCaja.metodoPago`). |
+| `generarQrPagoFacil(cuotaId: ID!)` | `generarQrPagoFacil(cuotaId: UUID!, ciNitCliente: String!, razonSocialCliente: String!)` | argumento distinto | Enviar NIT/razón social. Ver `GenerarQrPagoFacil`. |
+| `QrPagoFacil {monto estado …}` | `TransaccionQr {id cuotaId pagofacilTransactionId qrImagenBase64 montoBs estado fechaExpiracion}` | renombrar + enum distinto | Tipo `TransaccionQr`; `monto`→`montoBs`. `estado` es **String libre**, valores reales `GENERADO` / `CONFIRMADO` (no `PENDIENTE/PAGADO/EXPIRADO`). |
+| `consultarEstadoQrPagoFacil` | no existe | NO EXISTE | Ver tabla de operaciones faltantes. |
+| `simularConfirmacionQrDev` devuelve `QrPagoFacil` con `recibo` | devuelve **`Recibo!`** | tipo distinto | Pedir campos de `Recibo` directamente. Solo en perfil `dev` con simulación habilitada y pasarela mock (si no: error de regla de negocio). Roles ADMIN/CAJERO. Ver `SimularConfirmacionQrDev`. |
+| `registrarEgresoCaja(input {concepto, categoria: CategoriaEgreso, monto, fecha, comprobante})` | `RegistrarEgresoInput {usuarioCajeroId!, categoria: String!, metodoPago: MetodoPago!, montoBs!, descripcion!}` | renombrar + obligatorios nuevos | `concepto`→`descripcion`, `monto`→`montoBs`; sin `fecha` (la pone el servidor) ni `comprobante`; `metodoPago` y `usuarioCajeroId` obligatorios. `categoria` es **String libre** (máx. 50 caracteres), no enum: el enum del frontend es solo UI. Ver `RegistrarEgresoCaja`. |
+| `MovimientoCaja { fecha tipo concepto monto reciboId }` | `{ id tipoMovimiento categoria metodoPago montoBs descripcion fechaMovimiento recibo { id numeroRecibo … } }` | renombrar | `fecha`→`fechaMovimiento`, `tipo`→`tipoMovimiento`, `concepto`→`descripcion`, `monto`→`montoBs`, `reciboId`→`recibo.id`; `metodoPago` es no nulo. |
+| `obtenerResumenCaja`, `listarMovimientosCaja` | `obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!)` → `ResumenFlujoCaja {totalIngresosBs totalEgresosBs saldoNetoBs movimientos}` | NO EXISTE (alternativa real) | Ver `ObtenerFlujoCaja`. |
+| `GET /api/v1/recibos/{id}/pdf` | **No existe.** No hay ruta REST de recibos. El PDF se obtiene con el campo GraphQL `Recibo.pdfUrlS3`, que devuelve una **URL prefirmada** de almacenamiento S3 (ver `docs/s3-receipts.md`). Solo la resuelven ADMIN y CAJERO (autenticados); puede ser `null` si aún no hay PDF | ruta distinta | Pedir `pdfUrlS3` en `Recibo` y abrir esa URL con `window.open` (no requiere `Authorization`; la firma va en la URL y caduca). |
+| `urlDescargaPdf` / `urlDescargaExcel` del reporte | `urlDescargaPdf: String!` = `/api/v1/reports/export/pdf?reporteId=<uuid>`; `urlDescargaExcel` = `/api/v1/reports/export/xlsx?reporteId=<uuid>` (rutas **relativas**) | semántica | Anteponer la base (`http://localhost:8080`). `GET` exige `Authorization: Bearer` (o `X-Dev-User` en local) con rol **ADMIN**; el reporte pertenece al usuario que lo generó (otro usuario → 404) y los formatos válidos son solo `xlsx` y `pdf` (otro → 400). Una descarga por `<a href>` no envía cabeceras: descargar con `HttpClient` (`responseType: 'blob'`). |
+
+## Reportes
+
+| Uso en frontend | Contrato real | Estado | Qué cambia el frontend |
+| --- | --- | --- | --- |
+| `generarReporteInteligente(pregunta)` con `explicacionNatural consultaSqlEjecutada columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf` | idem; el backend además devuelve `reporteId`, `preguntaOriginal` (el frontend no los pide: OK). Solo ADMIN | OK | Pedir también `reporteId` si se quiere identificar el reporte. |
+| `TipoGrafico` `BARRAS/LINEAS/TORTA` | `tipoGraficoSugerido: String!`; hoy siempre `"TABLA"` | tipo distinto | No tratarlo como enum cerrado: valor por defecto `TABLA`. |
+| `consultaSqlEjecutada?`, `urlDescarga*?` opcionales | no nulos (`String!`) | OK | — |
+| `filasJson` | `String!` con un arreglo JSON de filas | OK | `JSON.parse`. |
+| Pregunta "pacientes con cuotas pendientes" | Las vistas de reportes no contienen datos de pacientes | semántica distinta | Para pacientes con cuotas, usar `listarOrdenesCobro`/`listarCuotasPendientesPorPaciente`. Si falta el proveedor de IA, la operación falla (no hay respuesta simulada). |
+
+## Evidencia por operación (frontend vs esquema servido)
+
+El detalle de errores (por operación) lo imprime `FrontendExamplesValidationTest.frontendOperationsMatchTheValidityStatedInTheDoc`. Resumen por tipo de error del validador: `FieldUndefined` (campo inexistente), `UnknownType` (`ID`, `PacienteInput`, `OdontologoInput`, …), `MissingFieldArgument` (`codigo`, `nombre`, `ciNitCliente`, `razonSocialCliente`), `UnknownArgument` (`input` en `crearEspecialidad`), `SubselectionRequired` (`rol`).
+
+## Apéndice: ejemplos válidos del contrato real
+
+Fuente: `src/test/resources/contract/real-examples.graphql`. Los UUID son marcadores: usar los de la carga de datos sintéticos o de una respuesta previa. Cada bloque está validado (documento y variables) contra el esquema servido.
+
+### ListarPacientes
+
+```graphql
+query ListarPacientes($busqueda: String) {
+  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos telefonoWhatsapp email direccion }
+}
+```
+
+Variables:
+
+```json
+{"busqueda": "Rojas"}
+```
+
+### ListarOdontologos
+
+```graphql
+query ListarOdontologos($soloActivos: Boolean) {
+  listarOdontologos(soloActivos: $soloActivos) {
+    id ci matriculaProfesional nombres apellidos telefono email porcentajeComision especialidades { id codigo nombre }
+  }
+}
+```
+
+Variables:
+
+```json
+{"soloActivos": true}
+```
+
+### ListarEspecialidades
+
+```graphql
+query ListarEspecialidades {
+  listarEspecialidades { id codigo nombre descripcion }
+}
+```
+
+### ListarConsultorios
+
+```graphql
+query ListarConsultorios {
+  listarConsultorios { id codigo nombre ubicacion estado }
+}
+```
+
+### ListarServiciosOdontologicos
+
+```graphql
+query ListarServiciosOdontologicos($especialidadId: UUID) {
+  listarServiciosOdontologicos(especialidadId: $especialidadId) {
+    id codigo nombre descripcion precioBaseBs especialidad { id nombre }
+  }
+}
+```
+
+Variables:
+
+```json
+{"especialidadId": null}
+```
+
+### ObtenerConfiguracionEmpresa
+
+```graphql
+query ObtenerConfiguracionEmpresa {
+  obtenerConfiguracionEmpresa { id nombreComercial razonSocial nit direccion telefonoContacto emailContacto monedaSimbolo }
+}
+```
+
+### ListarUsuarios
+
+```graphql
+query ListarUsuarios {
+  listarUsuarios { id username email nombreCompleto activo rol { codigo nombre } }
+}
+```
+
+### ListarAuditLogs
+
+```graphql
+query ListarAuditLogs($limite: Int) {
+  listarAuditLogs(limite: $limite) { id accion entidadAfectada entidadId detalleJson createdAt }
+}
+```
+
+Variables:
+
+```json
+{"limite": 50}
+```
+
+### ListarOrdenesCobro
+
+```graphql
+query ListarOrdenesCobro($estado: EstadoOrdenCobro, $pacienteId: UUID) {
+  listarOrdenesCobro(estado: $estado, pacienteId: $pacienteId) {
+    id modalidadPago montoSubtotalBs descuentoBs montoTotalBs saldoPendienteBs cantidadCuotas estado createdAt
+    paciente { id ciNit nombres apellidos }
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado fechaPago }
+  }
+}
+```
+
+Variables:
+
+```json
+{"estado": "PENDIENTE", "pacienteId": null}
+```
+
+### ObtenerOrdenCobroDetalle
+
+```graphql
+query ObtenerOrdenCobroDetalle($id: UUID!) {
+  obtenerOrdenCobroDetalle(id: $id) {
+    id modalidadPago montoTotalBs saldoPendienteBs estado createdAt
+    paciente { id ciNit nombres apellidos }
+    items { id piezaDental cantidad precioUnitarioBs subtotalBs servicio { id codigo nombre } }
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado fechaPago }
+  }
+}
+```
+
+Variables:
+
+```json
+{"id": "11111111-1111-4111-8111-111111111111"}
+```
+
+### ObtenerFlujoCaja
+
+```graphql
+query ObtenerFlujoCaja($fechaInicio: DateTime!, $fechaFin: DateTime!) {
+  obtenerFlujoCaja(fechaInicio: $fechaInicio, fechaFin: $fechaFin) {
+    totalIngresosBs totalEgresosBs saldoNetoBs
+    movimientos {
+      id tipoMovimiento categoria metodoPago montoBs descripcion fechaMovimiento
+      recibo { id numeroRecibo }
+    }
+  }
+}
+```
+
+Variables:
+
+```json
+{"fechaInicio": "2026-10-01T00:00:00-04:00", "fechaFin": "2026-10-31T23:59:59-04:00"}
+```
+
+### GenerarReporteInteligente
+
+```graphql
+query GenerarReporteInteligente($pregunta: String!) {
+  generarReporteInteligente(pregunta: $pregunta) {
+    reporteId preguntaOriginal explicacionNatural consultaSqlEjecutada columnas filasJson
+    tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
+  }
+}
+```
+
+Variables:
+
+```json
+{"pregunta": "Ingresos por QR y efectivo de esta semana"}
+```
+
+### CrearPaciente
+
+```graphql
+mutation CrearPaciente($input: CrearPacienteInput!) {
+  crearPaciente(input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion }
+}
+```
+
+Variables:
+
+```json
+{"input": {"ciNit": "9876543", "nombres": "Lucia", "apellidos": "Rojas Mamani", "fechaNacimiento": "1990-05-17", "genero": "F", "telefonoWhatsapp": "+59171234567", "email": "lucia@example.bo", "direccion": "Av. Banzer 100"}}
+```
+
+### CrearEspecialidad
+
+```graphql
+mutation CrearEspecialidad($codigo: String!, $nombre: String!, $descripcion: String) {
+  crearEspecialidad(codigo: $codigo, nombre: $nombre, descripcion: $descripcion) { id codigo nombre descripcion }
+}
+```
+
+Variables:
+
+```json
+{"codigo": "ENDO", "nombre": "Endodoncia", "descripcion": "Tratamiento de conductos"}
+```
+
+### CrearOdontologo
+
+```graphql
+mutation CrearOdontologo($input: CrearOdontologoInput!) {
+  crearOdontologo(input: $input) { id ci matriculaProfesional nombres apellidos especialidades { id nombre } }
+}
+```
+
+Variables:
+
+```json
+{"input": {"ci": "5551234", "matriculaProfesional": "MP-1234", "nombres": "Carlos", "apellidos": "Vaca Justiniano", "telefono": "+59170011223", "email": null, "porcentajeComision": 30.00, "especialidadesIds": ["22222222-2222-4222-8222-222222222222"]}}
+```
+
+### CrearConsultorio
+
+```graphql
+mutation CrearConsultorio($input: CrearConsultorioInput!) {
+  crearConsultorio(input: $input) { id codigo nombre ubicacion estado }
+}
+```
+
+Variables:
+
+```json
+{"input": {"codigo": "CONS-05", "nombre": "Consultorio 5", "ubicacion": "Piso 2"}}
+```
+
+### CrearServicioOdontologico
+
+```graphql
+mutation CrearServicioOdontologico($input: CrearServicioInput!) {
+  crearServicioOdontologico(input: $input) { id codigo nombre descripcion precioBaseBs especialidad { id nombre } }
+}
+```
+
+Variables:
+
+```json
+{"input": {"especialidadId": null, "codigo": "LIMP-01", "nombre": "Limpieza dental", "descripcion": "Profilaxis", "precioBaseBs": 150.50}}
+```
+
+### ActualizarConfiguracionEmpresa
+
+```graphql
+mutation ActualizarConfiguracionEmpresa($input: EmpresaConfigInput!) {
+  actualizarConfiguracionEmpresa(input: $input) { id nombreComercial razonSocial nit direccion telefonoContacto emailContacto }
+}
+```
+
+Variables:
+
+```json
+{"input": {"nombreComercial": "Sonrisa Dental", "razonSocial": "Sonrisa S.R.L.", "nit": "1023456029", "direccion": "Av. San Martin 155, Santa Cruz de la Sierra", "telefonoContacto": "+591 3 3412233", "emailContacto": "info@sonrisa.bo"}}
+```
+
+### CrearUsuario
+
+```graphql
+mutation CrearUsuario($input: CrearUsuarioInput!) {
+  crearUsuario(input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
+```
+
+Variables:
+
+```json
+{"input": {"rolCodigo": "CAJERO", "username": "cajero2", "email": "cajero2@sonrisa.bo", "nombreCompleto": "Cajero Dos", "password": "Secreta2026!"}}
+```
+
+### CrearOrdenCobroManual
+
+```graphql
+mutation CrearOrdenCobroManual($input: CrearOrdenCobroInput!) {
+  crearOrdenCobroManual(input: $input) { id estado montoSubtotalBs descuentoBs montoTotalBs saldoPendienteBs items { servicio { id nombre } cantidad subtotalBs } }
+}
+```
+
+Variables:
+
+```json
+{"input": {"pacienteId": "33333333-3333-4333-8333-333333333333", "odontologoId": null, "items": [{"servicioId": "44444444-4444-4444-8444-444444444444", "piezaDental": "18", "cantidad": 1}], "descuentoBs": 0, "observaciones": "Orden manual"}}
+```
+
+### ConfigurarPlanDePagos
+
+```graphql
+mutation ConfigurarPlanDePagos($input: ConfigurarPlanPagosInput!) {
+  configurarPlanDePagos(input: $input) {
+    id modalidadPago estado montoTotalBs cantidadCuotas
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado }
+  }
+}
+```
+
+Variables:
+
+```json
+{"input": {"ordenCobroId": "11111111-1111-4111-8111-111111111111", "modalidadPago": "CREDITO", "descuentoBs": 10.00, "cantidadCuotas": 3, "fechaPrimeraCuota": "2026-11-15", "intervaloDias": 30}}
+```
+
+### CobrarCuotaEnEfectivo
+
+```graphql
+mutation CobrarCuotaEnEfectivo($input: CobrarEfectivoInput!) {
+  cobrarCuotaEnEfectivo(input: $input) { id numeroRecibo ciNitCliente razonSocialCliente concepto montoTotalBs pdfUrlS3 fechaEmision }
+}
+```
+
+Variables:
+
+```json
+{"input": {"cuotaId": "55555555-5555-4555-8555-555555555555", "usuarioCajeroId": "66666666-6666-4666-8666-666666666666", "ciNitCliente": "9876543", "razonSocialCliente": "Rojas Mamani"}}
+```
+
+### GenerarQrPagoFacil
+
+```graphql
+mutation GenerarQrPagoFacil($cuotaId: UUID!, $ciNitCliente: String!, $razonSocialCliente: String!) {
+  generarQrPagoFacil(cuotaId: $cuotaId, ciNitCliente: $ciNitCliente, razonSocialCliente: $razonSocialCliente) {
+    id cuotaId pagofacilTransactionId qrImagenBase64 montoBs estado fechaExpiracion
+  }
+}
+```
+
+Variables:
+
+```json
+{"cuotaId": "55555555-5555-4555-8555-555555555555", "ciNitCliente": "9876543", "razonSocialCliente": "Rojas Mamani"}
+```
+
+### SimularConfirmacionQrDev
+
+```graphql
+mutation SimularConfirmacionQrDev($pagofacilTransactionId: String!) {
+  simularConfirmacionQrDev(pagofacilTransactionId: $pagofacilTransactionId) {
+    id numeroRecibo montoTotalBs pdfUrlS3 fechaEmision
+  }
+}
+```
+
+Variables:
+
+```json
+{"pagofacilTransactionId": "PF-MOCK-0001"}
+```
+
+### RegistrarEgresoCaja
+
+```graphql
+mutation RegistrarEgresoCaja($input: RegistrarEgresoInput!) {
+  registrarEgresoCaja(input: $input) { id tipoMovimiento categoria metodoPago montoBs descripcion fechaMovimiento }
+}
+```
+
+Variables:
+
+```json
+{"input": {"usuarioCajeroId": "66666666-6666-4666-8666-666666666666", "categoria": "INSUMOS", "metodoPago": "EFECTIVO", "montoBs": 85.50, "descripcion": "Compra de guantes"}}
+```
+
+### ListarCuotasPendientesPorPaciente
+
+```graphql
+query ListarCuotasPendientesPorPaciente($pacienteId: UUID!) {
+  listarCuotasPendientesPorPaciente(pacienteId: $pacienteId) { id numeroCuota montoCuotaBs fechaVencimiento estado }
+}
+```
+
+Variables:
+
+```json
+{"pacienteId": "33333333-3333-4333-8333-333333333333"}
+```
