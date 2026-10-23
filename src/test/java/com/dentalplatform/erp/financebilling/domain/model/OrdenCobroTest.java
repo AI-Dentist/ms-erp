@@ -89,6 +89,62 @@ class OrdenCobroTest {
     }
 
     @Test
+    void annulmentKeepsRowsAndSnapshotsButVoidsOutstandingDebtAndIsNotRepeatable() {
+        var o = order();
+        var cuotas = o.getCuotas();
+        o.anular("Error de registro");
+        assertThat(o.getEstado()).isEqualTo(EstadoOrdenCobro.ANULADO);
+        assertThat(o.getSaldoPendiente()).isEqualTo(Money.zero());
+        assertThat(o.getTotal()).isEqualTo(Money.of("1000"));
+        assertThat(o.getCuotas()).extracting(CuotaPago::id).containsExactlyElementsOf(cuotas.stream().map(CuotaPago::id).toList());
+        assertThat(o.getCuotas()).extracting(CuotaPago::estado).containsOnly(EstadoCuota.ANULADA);
+        assertThatThrownBy(() -> o.anular("Otra vez")).hasMessage("La orden de cobro ya está anulada");
+        assertThatThrownBy(() -> o.registrarPagoCuota(cuotas.getFirst().id(), now))
+                .hasMessage("No se puede cobrar una orden anulada");
+    }
+
+    @Test
+    void paidAndPartiallyPaidOrdersAndInvalidReasonsCannotBeAnnulled() {
+        var o = order();
+        var before = o.getCuotas();
+        for (String reason : new String[]{null, " ", "x".repeat(501)}) {
+            assertThatThrownBy(() -> o.anular(reason)).isInstanceOf(BusinessRuleException.class);
+            assertThat(o.getCuotas()).isEqualTo(before);
+            assertThat(o.getEstado()).isEqualTo(EstadoOrdenCobro.PENDIENTE);
+            assertThat(o.getSaldoPendiente()).isEqualTo(Money.of("1000"));
+        }
+        o.configurarPlanDePagos(ModalidadPago.CREDITO, Money.zero(), 2, now.toLocalDate(), 30);
+        o.registrarPagoCuota(o.getCuotas().getFirst().id(), now);
+        var partial = o.getCuotas();
+        assertThatThrownBy(() -> o.anular("Error")).hasMessage("No se puede anular una orden con pagos registrados");
+        assertThat(o.getCuotas()).isEqualTo(partial);
+        assertThat(o.getSaldoPendiente()).isEqualTo(Money.of("500"));
+        o.registrarPagoCuota(o.getCuotas().getLast().id(), now);
+        assertThatThrownBy(() -> o.anular("Error")).hasMessage("No se puede anular una orden con pagos registrados");
+        assertThat(o.getEstado()).isEqualTo(EstadoOrdenCobro.PAGADO);
+    }
+
+    @Test
+    void inconsistentPendingOrderWithPaidQuotaCannotBeAnnulledAndOverdueQuotaIsVoided() {
+        var original = order();
+        for (var state : List.of(EstadoCuota.PAGADA, EstadoCuota.VENCIDA)) {
+            var q = original.getCuotas().getFirst();
+            var o = new OrdenCobro(original.getId(), original.getPacienteId(), null, null,
+                    original.getModalidadPago(), original.getSubtotal(), original.getDescuento(), original.getTotal(),
+                    original.getSaldoPendiente(), EstadoOrdenCobro.PENDIENTE, null, now, original.getItems(),
+                    List.of(new CuotaPago(q.id(), 1, q.montoCuota(), q.fechaVencimiento(), state, null)));
+            if (state == EstadoCuota.PAGADA) {
+                assertThatThrownBy(() -> o.anular("Error")).isInstanceOf(BusinessRuleException.class);
+                assertThat(o.getCuotas().getFirst().estado()).isEqualTo(state);
+                assertThat(o.getEstado()).isEqualTo(EstadoOrdenCobro.PENDIENTE);
+            } else {
+                o.anular("Error");
+                assertThat(o.getCuotas().getFirst().estado()).isEqualTo(EstadoCuota.ANULADA);
+            }
+        }
+    }
+
+    @Test
     void annulledOrderCannotBePaid() {
         var original = order();
         var annulled = new OrdenCobro(original.getId(), original.getPacienteId(), null, null,

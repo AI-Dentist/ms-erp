@@ -1,6 +1,6 @@
 package com.dentalplatform.erp.financebilling.report;
 
-import com.dentalplatform.erp.financebilling.domain.report.ReportSqlGuard;
+import com.dentalplatform.erp.financebilling.domain.report.SqlReadOnlyGuardrail;
 import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -8,8 +8,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.*;
 
-class ReportSqlGuardTest {
-    private final ReportSqlGuard guard = new ReportSqlGuard();
+class SqlReadOnlyGuardrailTest {
+    private final SqlReadOnlyGuardrail guard = new SqlReadOnlyGuardrail();
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -18,7 +18,9 @@ class ReportSqlGuardTest {
         "SELECT status, SUM(total_bs), AVG(balance_bs), MIN(total_bs), MAX(total_bs), COUNT(*) FROM report_orders GROUP BY status ORDER BY status DESC LIMIT 500",
         "SELECT code, price_bs FROM report_services WHERE price_bs >= 0 AND active = true ORDER BY price_bs ASC LIMIT 1",
         "SELECT * FROM report_income WHERE day >= '2026-01-01' AND category = 'COBRO_CUOTA'",
-        "SELECT COUNT(*) FROM report_orders LIMIT 1"
+        "SELECT COUNT(*) FROM report_orders LIMIT 1",
+        "SELECT * FROM report_income WHERE category = 'SETTLEMENT'",
+        "SELECT * FROM report_income WHERE category = 'UPDATED'"
     })
     void acceptsOnlyDocumentedGrammar(String sql) {
         assertThat(guard.validate(sql)).isEqualTo(sql.trim());
@@ -49,6 +51,28 @@ class ReportSqlGuardTest {
     void rejectsUncertainSyntaxWithNoSqlInError(String sql) {
         assertThatThrownBy(() -> guard.validate(sql)).isInstanceOf(BusinessRuleException.class)
                 .hasMessage("Consulta de reporte no permitida");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "CREATE", "GRANT",
+        "REVOKE", "MERGE", "COPY", "CALL", "DO", "EXECUTE", "SET", "LOCK", "VACUUM", "INTO",
+        "pg_sleep", "pg_catalog", "dblink", "lo_import", "information_schema"})
+    void rejectsForbiddenTokensEvenInsideStringLiterals(String token) {
+        for (String variant : new String[]{token, token.toLowerCase(java.util.Locale.ROOT), token.toUpperCase(java.util.Locale.ROOT)}) {
+            assertThatThrownBy(() -> guard.validate("SELECT * FROM report_income WHERE category = '" + variant + "'"))
+                    .isInstanceOf(BusinessRuleException.class).hasMessage("Consulta de reporte no permitida");
+            assertThatThrownBy(() -> guard.validate("SELECT \"" + variant + "\" FROM report_income"))
+                    .isInstanceOf(BusinessRuleException.class).hasMessage("Consulta de reporte no permitida");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SELECT * FROM report_income # comment", "SELECT * FROM report_income */",
+        "SELECT * FROM report_income FOR SHARE", "SELECT * FROM information_schema.tables",
+        "SELECT * FROM report_income WHERE category = 'a; b'", "SELECT * FROM report_income WHERE category = '--'",
+        "SELECT * FROM report_income WHERE category = '/*x*/'", "SELECT * FROM report_income WHERE category = '#'"})
+    void rejectsEveryCommentAndStatementDelimiter(String sql) {
+        assertThatThrownBy(() -> guard.validate(sql)).isInstanceOf(BusinessRuleException.class);
     }
 
     @Test

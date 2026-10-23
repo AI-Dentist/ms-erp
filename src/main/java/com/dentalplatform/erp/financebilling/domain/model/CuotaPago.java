@@ -8,6 +8,13 @@ import java.util.UUID;
 
 public record CuotaPago(UUID id, int numeroCuota, Money montoCuota, LocalDate fechaVencimiento,
                         EstadoCuota estado, OffsetDateTime fechaPago) {
+    public CuotaPago anular() {
+        if (estado == EstadoCuota.PAGADA) {
+            throw new BusinessRuleException("No se puede anular una cuota pagada");
+        }
+        return new CuotaPago(id, numeroCuota, montoCuota, fechaVencimiento, EstadoCuota.ANULADA, fechaPago);
+    }
+
     public CuotaPago pagar(OffsetDateTime now) {
         if (estado != EstadoCuota.PENDIENTE) {
             throw new BusinessRuleException("La cuota no está pendiente de pago");

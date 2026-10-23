@@ -2,7 +2,7 @@ package com.dentalplatform.erp.financebilling.infrastructure.report;
 
 import com.dentalplatform.erp.financebilling.application.port.ReportQueryPort;
 import com.dentalplatform.erp.financebilling.domain.report.ReportResult;
-import com.dentalplatform.erp.financebilling.domain.report.ReportSqlGuard;
+import com.dentalplatform.erp.financebilling.domain.report.SqlReadOnlyGuardrail;
 import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -24,7 +24,7 @@ public class ReportingJdbcQueryAdapter implements ReportQueryPort, AutoCloseable
     private final String password;
     private final String mainUsername;
     private HikariDataSource pool;
-    private final ReportSqlGuard guard = new ReportSqlGuard();
+    private final SqlReadOnlyGuardrail guard = new SqlReadOnlyGuardrail();
 
     public ReportingJdbcQueryAdapter(@Value("${erp.reports.db-url:${spring.datasource.url}}") String url,
                                      @Value("${erp.reports.db-user:}") String username,

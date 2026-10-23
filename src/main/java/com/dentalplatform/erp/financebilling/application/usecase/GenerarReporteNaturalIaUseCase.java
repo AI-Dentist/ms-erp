@@ -4,7 +4,7 @@ import com.dentalplatform.erp.financebilling.application.port.ReportQueryPort;
 import com.dentalplatform.erp.financebilling.application.port.SqlGeneratorPort;
 import com.dentalplatform.erp.financebilling.application.report.ReportResponse;
 import com.dentalplatform.erp.financebilling.application.report.ReportStore;
-import com.dentalplatform.erp.financebilling.domain.report.ReportSqlGuard;
+import com.dentalplatform.erp.financebilling.domain.report.SqlReadOnlyGuardrail;
 import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,7 +20,7 @@ public class GenerarReporteNaturalIaUseCase {
     private final ReportQueryPort query;
     private final ReportStore store;
     private final JsonMapper json;
-    private final ReportSqlGuard guard = new ReportSqlGuard();
+    private final SqlReadOnlyGuardrail guard = new SqlReadOnlyGuardrail();
 
     public GenerarReporteNaturalIaUseCase(SqlGeneratorPort generator, ReportQueryPort query,
                                          ReportStore store, JsonMapper json) {

@@ -85,6 +85,25 @@ public class OrdenCobro {
         this.cuotas = List.copyOf(plan);
     }
 
+    /**
+     * Logical annulment is deliberately non-idempotent: a repeat is an explicit business error, not another audit.
+     * Historical totals/items/installment IDs remain intact; outstanding debt becomes zero because nothing is due.
+     */
+    public void anular(String motivo) {
+        if (motivo == null || motivo.isBlank() || motivo.strip().length() > 500) {
+            throw new BusinessRuleException("El motivo de anulación debe tener entre 1 y 500 caracteres");
+        }
+        if (estado == EstadoOrdenCobro.ANULADO) {
+            throw new BusinessRuleException("La orden de cobro ya está anulada");
+        }
+        if (estado != EstadoOrdenCobro.PENDIENTE || cuotas.stream().anyMatch(c -> c.estado() == EstadoCuota.PAGADA)) {
+            throw new BusinessRuleException("No se puede anular una orden con pagos registrados");
+        }
+        this.cuotas = cuotas.stream().map(CuotaPago::anular).toList();
+        this.saldoPendiente = Money.zero();
+        this.estado = EstadoOrdenCobro.ANULADO;
+    }
+
     public CuotaPago registrarPagoCuota(UUID cuotaId, OffsetDateTime fechaPago) {
         if (estado == EstadoOrdenCobro.ANULADO) {
             throw new BusinessRuleException("No se puede cobrar una orden anulada");
