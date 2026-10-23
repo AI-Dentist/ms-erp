@@ -32,6 +32,24 @@ Fuera de `dev`, configure `KEYCLOAK_ISSUER_URI` con el issuer exacto del realm. 
 
 Inyecte secretos mediante el mecanismo seguro del entorno; no los incluya en el repositorio ni en el historial de comandos.
 
+## Integración local con el frontend (perfil local)
+
+Perfil de **solo desarrollo** para el microfrontend Angular (`http://localhost:4201`). Nunca se usa en producción.
+
+```bash
+docker compose up -d
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+- GraphQL: `http://localhost:8080/graphql` (GraphiQL habilitado). Puerto: `ERP_PORT` (por defecto 8080).
+- Por defecto apunta a los servicios del `docker-compose.yml` (PostgreSQL `localhost:5432`, RabbitMQ `localhost:5672`, SeaweedFS S3 `http://localhost:8333`, bucket `erp-receipts`) con credenciales dev. Variables opcionales: `ERP_DB_URL|USER|PASSWORD`, `ERP_RABBIT_HOST|PORT|USER|PASSWORD`, `ERP_RECEIPTS_MINIO_*`, `PAGOFACIL_WEBHOOK_SECRET`, `ERP_CORS_ALLOWED_ORIGINS`. Ninguna es obligatoria.
+- PagoFácil en modo mock, `simularConfirmacionQrDev` habilitado y n8n deshabilitado. La simulación exige la propiedad y el perfil `dev` o `local`, y se rechaza si hay un perfil `prod`.
+- Los PDF de recibos se guardan en S3 y `Recibo.pdfUrlS3` devuelve una URL prefirmada descargable desde el navegador.
+- Flyway carga también `classpath:db/local` (datos sintéticos); solo este perfil lo hace.
+- **`X-Dev-User: <username>`**: debe ser un usuario `activo` de `usuarios` (p. ej. `admin` del seed). Solo se concede el rol de ese usuario (`ROLE_<codigo>`), de modo que `@PreAuthorize` sigue aplicando (un CAJERO no puede ejecutar mutaciones de ADMIN). Cabecera ausente, vacía, repetida, desconocida o inactiva → `401`. Si llega `Authorization: Bearer`, la cabecera se ignora y el JWT solo se acepta si `ERP_LOCAL_JWT_ISSUER_URI` está definido; si no, `401`. No existe el administrador anónimo del perfil `dev`.
+- CORS: solo el origen `http://localhost:4201` (lista `erp.cors.allowed-origins`, vacía fuera de `local`, nunca `*`), métodos GET/POST/OPTIONS, cabeceras `Authorization, Content-Type, Accept, Idempotency-Key, X-Dev-User`; expone `Idempotency-Replayed` y `Content-Disposition`.
+- Seguridad: la aplicación **no arranca** si `erp.security.local-dev-user.enabled=true` se combina con un perfil distinto de `local`, con `erp.security.dev-mode=true` o si `local` convive con `prod`/`production`. En la cadena por defecto `X-Dev-User` se ignora por completo.
+
 ## Reportes dinámicos y exportación
 
 1. Tras aplicar V5, aprovisione un **nuevo login no propietario, exclusivo de lectura**, siguiendo [scripts/reporting-role.sql](scripts/reporting-role.sql). En una sesión administrativa `psql` protegida, suministre `report_user`, `report_password` y `app_user`, y ejecute explícitamente `\i scripts/reporting-role.sql`. Nunca se ejecuta automáticamente ni modifica contraseñas existentes.

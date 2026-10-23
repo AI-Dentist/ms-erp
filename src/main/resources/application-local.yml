@@ -1,0 +1,54 @@
+# Frontend integration profile (Angular mf-erp on http://localhost:4201). DEVELOPMENT ONLY, never use in production.
+# Dependencies come from docker-compose.yml; every value below is a dev-only default overridable by env vars.
+# Not combinable with the legacy 'dev' profile or with prod/production (the app refuses to start).
+spring:
+  graphql:
+    graphiql:
+      enabled: true
+  flyway:
+    # db/local holds synthetic, idempotent seed data; Flyway tolerates the folder not existing.
+    locations: classpath:db/migration,classpath:db/local
+  datasource:
+    url: ${ERP_DB_URL:jdbc:postgresql://localhost:5432/dental_erp}
+    username: ${ERP_DB_USER:erp_user}
+    password: ${ERP_DB_PASSWORD:erp_password}
+  rabbitmq:
+    host: ${ERP_RABBIT_HOST:localhost}
+    port: ${ERP_RABBIT_PORT:5672}
+    username: ${ERP_RABBIT_USER:erp_user}
+    password: ${ERP_RABBIT_PASSWORD:erp_password}
+
+server:
+  # The frontend calls http://localhost:8080/graphql
+  port: ${ERP_PORT:8080}
+
+erp:
+  cors:
+    allowed-origins: ${ERP_CORS_ALLOWED_ORIGINS:http://localhost:4201}
+  security:
+    local-dev-user:
+      # X-Dev-User: <username of an ACTIVE usuarios row>; only that user's role is granted.
+      enabled: true
+      # Leave blank: Bearer JWTs are rejected (401). Set to a Keycloak issuer to accept them alongside X-Dev-User.
+      jwt-issuer-uri: ${ERP_LOCAL_JWT_ISSUER_URI:}
+  pagofacil:
+    # LOCAL MOCK: no PagoFacil credentials. Simulation is also gated on profile dev|local in the controller.
+    mock-enabled: true
+    dev-simulation-enabled: true
+    callback-url: http://localhost:${ERP_PORT:8080}/api/v1/webhooks/pagofacil
+    webhook-secret: ${PAGOFACIL_WEBHOOK_SECRET:local-only-pagofacil-mock-secret}
+  n8n:
+    enabled: false
+  receipts:
+    # SeaweedFS from docker-compose (bucket erp-receipts); Recibo.pdfUrlS3 resolves to a browser-downloadable presigned URL.
+    mode: s3
+    minio:
+      endpoint: ${ERP_RECEIPTS_MINIO_ENDPOINT:http://localhost:8333}
+      access-key: ${ERP_RECEIPTS_MINIO_ACCESS_KEY:erp_dev_access}
+      secret-key: ${ERP_RECEIPTS_MINIO_SECRET_KEY:erp_dev_secret_local_only}
+      bucket: ${ERP_RECEIPTS_MINIO_BUCKET:erp-receipts}
+      provider: s3-compatible
+
+logging:
+  level:
+    com.dentalplatform.erp: DEBUG

@@ -11,6 +11,7 @@ import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
+import com.dentalplatform.erp.shared.infrastructure.security.DevUserAuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.util.ContentCachingResponseWrapper;
@@ -90,6 +91,17 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             authentication.getAuthorities().stream().map(a -> a.getAuthority()).sorted()
                     .forEach(value -> scope.append('|').append(value.length()).append(':').append(value));
             // Keep both the existing 100-character key limit and operation column limit.
+            operation = fingerprint(request.getMethod(), request.getRequestURI(),
+                    scope.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        if (request.getUserPrincipal() instanceof DevUserAuthenticationToken authentication) {
+            // Local X-Dev-User principals: bind replay to the database user and its role, like JWT subjects.
+            StringBuilder scope = new StringBuilder(operation);
+            for (String value : new String[]{"dev-user", String.valueOf(authentication.userId()), authentication.getName()}) {
+                scope.append('|').append(value.length()).append(':').append(value);
+            }
+            authentication.getAuthorities().stream().map(a -> a.getAuthority()).sorted()
+                    .forEach(value -> scope.append('|').append(value.length()).append(':').append(value));
             operation = fingerprint(request.getMethod(), request.getRequestURI(),
                     scope.toString().getBytes(StandardCharsets.UTF_8));
         }

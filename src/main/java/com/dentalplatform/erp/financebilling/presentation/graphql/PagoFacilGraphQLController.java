@@ -49,8 +49,9 @@ public class PagoFacilGraphQLController {
     @PreAuthorize("hasAnyRole('ADMIN','CAJERO')")
     public Recibo simularConfirmacionQrDev(@Argument String pagofacilTransactionId) {
         gateway.exigirMock();
-        if (!simulation || !environment.acceptsProfiles(Profiles.of("dev"))) {
-            throw new BusinessRuleException("La simulación QR solo está habilitada en el perfil dev");
+        // Explicit property AND a development profile (dev or local), never together with a production profile.
+        if (!simulation || !environment.acceptsProfiles(Profiles.of("(dev | local) & !prod & !production"))) {
+            throw new BusinessRuleException("La simulación QR solo está habilitada en el perfil dev o local");
         }
         var transaction = transactions.buscar(pagofacilTransactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("La transacción QR no existe"));

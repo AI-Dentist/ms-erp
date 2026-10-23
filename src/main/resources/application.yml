@@ -56,6 +56,14 @@ management:
         include: health,info
 
 erp:
+  cors:
+    # Explicit origins only (never '*'). Empty = CORS disabled, no Access-Control-* headers are emitted.
+    allowed-origins: ${ERP_CORS_ALLOWED_ORIGINS:}
+    max-age-seconds: 600
+  security:
+    local-dev-user:
+      # Profile 'local' only (startup fails otherwise): X-Dev-User header authentication. See application-local.yml.
+      enabled: false
   messaging:
     exchange: dental.topic.exchange
     consulta-finalizada-queue: erp.consulta.finalizada.queue
