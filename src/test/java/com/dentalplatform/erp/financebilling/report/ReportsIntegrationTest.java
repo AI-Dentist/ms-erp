@@ -1,31 +1,31 @@
 package com.dentalplatform.erp.financebilling.report;
 
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.prompt.Prompt;
-import java.util.List;
+import com.dentalplatform.erp.financebilling.application.agent.ErpMcpToolsService;
 import com.dentalplatform.erp.financebilling.application.port.ReportQueryPort;
-import com.dentalplatform.erp.financebilling.application.report.ReportStore;
-import com.dentalplatform.erp.support.IntegrationTestBase;
 import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
+import com.dentalplatform.erp.support.EmbeddedPostgresSupport;
+import com.dentalplatform.erp.support.IntegrationTestBase;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.graphql.execution.ErrorType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import com.dentalplatform.erp.support.EmbeddedPostgresSupport;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.io.ByteArrayInputStream;
 import java.sql.DriverManager;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
@@ -34,18 +34,17 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+/**
+ * The report engine behind {@code generarReporteDinamicoSqlTool} (Text-to-SQL with a mocked chat model), its
+ * read-only database role and the export route {@code GET /api/v1/reports/export/{reporteId}/{format}}.
+ */
 @WithMockUser(username = "report-admin", roles = "ADMIN")
 class ReportsIntegrationTest extends IntegrationTestBase {
     private static final String ROLE = "report_test_" + UUID.randomUUID().toString().replace("-", "");
     private static final String PASSWORD = UUID.randomUUID().toString();
-    private static final String QUERY = """
-        query($q: String!) { generarReporteInteligente(pregunta: $q) {
-          reporteId preguntaOriginal explicacionNatural consultaSqlEjecutada columnas filasJson
-          tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
-        } }
-        """;
     @MockitoBean(answers = org.mockito.Answers.CALLS_REAL_METHODS) ChatModel model;
     @Autowired ReportQueryPort queryPort;
+    @Autowired ErpMcpToolsService tools;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean java.time.Clock clock;
     @Autowired WebApplicationContext web;
     private MockMvc mvc;
@@ -71,7 +70,7 @@ class ReportsIntegrationTest extends IntegrationTestBase {
         jdbc.execute("GRANT USAGE ON SCHEMA public TO " + ROLE);
         jdbc.execute("GRANT SELECT ON report_income, report_orders, report_services TO " + ROLE);
         mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
-        givenSql("SELECT code, price_bs FROM report_services ORDER BY code LIMIT 2");
+        givenSql("SELECT code, price_bs FROM report_services WHERE price_bs > 0 ORDER BY code LIMIT 2");
     }
 
     private void givenSql(String sql) {
@@ -99,14 +98,12 @@ class ReportsIntegrationTest extends IntegrationTestBase {
                 String generated = question.equals(prompt.getUserMessage().getText()) ? sql : "SELECT * FROM report_income LIMIT 500";
                 return new ChatResponse(List.of(new Generation(new AssistantMessage(generated))));
             });
-            String rows = graphQl.document(QUERY).variable("q", question).execute()
-                    .path("generarReporteInteligente.preguntaOriginal").entity(String.class).isEqualTo(question)
-                    .path("generarReporteInteligente.consultaSqlEjecutada").entity(String.class).isEqualTo(sql)
-                    .path("generarReporteInteligente.columnas").entityList(String.class).containsExactly("sum")
-                    .path("generarReporteInteligente.filasJson").entity(String.class).get();
-            var json = tools.jackson.databind.json.JsonMapper.builder().build().readTree(rows);
-            assertThat(json.size()).isEqualTo(1);
-            assertThat(json.get(0).get(0).decimalValue()).isEqualByComparingTo(request[3]);
+            var report = tools.generarReporteDinamicoSqlTool(question);
+            assertThat(report.consultaSqlEjecutada()).isEqualTo(sql);
+            assertThat(report.columnas()).containsExactly("sum");
+            assertThat(report.totalFilas()).isEqualTo(1);
+            assertThat(new java.math.BigDecimal(String.valueOf(report.muestraFilas().getFirst().getFirst())))
+                    .isEqualByComparingTo(request[3]);
         }
         var prompts = org.mockito.ArgumentCaptor.forClass(Prompt.class);
         verify(model, times(3)).call(prompts.capture());
@@ -117,38 +114,45 @@ class ReportsIntegrationTest extends IntegrationTestBase {
         });
     }
 
-    private String generate() {
-        return graphQl.document(QUERY).variable("q", "Precios de servicios").execute()
-                .path("generarReporteInteligente.preguntaOriginal").entity(String.class).isEqualTo("Precios de servicios")
-                .path("generarReporteInteligente.explicacionNatural").entity(String.class).isEqualTo("Resultado agregado de las vistas de reportes; sin datos personales.")
-                .path("generarReporteInteligente.consultaSqlEjecutada").entity(String.class).isEqualTo("SELECT code, price_bs FROM report_services ORDER BY code LIMIT 2")
-                .path("generarReporteInteligente.columnas").entityList(String.class).containsExactly("code", "price_bs")
-                .path("generarReporteInteligente.filasJson").entity(String.class).matches(s -> s.startsWith("[[") && s.contains("CIR-EXT") && s.contains("CIR-TMO"))
-                .path("generarReporteInteligente.tipoGraficoSugerido").entity(String.class).isEqualTo("TABLA")
-                .path("generarReporteInteligente.urlDescargaExcel").entity(String.class).matches(s -> s.startsWith("/api/v1/reports/export/xlsx?reporteId="))
-                .path("generarReporteInteligente.urlDescargaPdf").entity(String.class).matches(s -> s.startsWith("/api/v1/reports/export/pdf?reporteId="))
-                .path("generarReporteInteligente.reporteId").entity(String.class).get();
+    private ErpMcpToolsService.ReporteTool generate() {
+        var report = tools.generarReporteDinamicoSqlTool("Precios de servicios");
+        assertThat(report.consultaSqlEjecutada()).isEqualTo("SELECT code, price_bs FROM report_services WHERE price_bs > 0 ORDER BY code LIMIT 2");
+        assertThat(report.columnas()).containsExactly("code", "price_bs");
+        assertThat(report.totalFilas()).isEqualTo(2);
+        assertThat(report.tipoGraficoSugerido()).isEqualTo("TORTA");
+        assertThat(report.urlDescargaExcel()).isEqualTo("/api/v1/reports/export/" + report.reporteId() + "/xlsx");
+        assertThat(report.urlDescargaPdf()).isEqualTo("/api/v1/reports/export/" + report.reporteId() + "/pdf");
+        return report;
     }
 
     @Test
-    void publicGraphQlAndBinaryExportsUseCachedResultsOnly() throws Exception {
-        String id = generate();
-        var xlsx = mvc.perform(get("/api/v1/reports/export/xlsx").param("reporteId", id))
+    void exportsAreRealFilesWithLetterheadAndBolivianosBuiltFromTheCachedResultOnly() throws Exception {
+        var clinic = graphQl.document("{ obtenerConfiguracionEmpresa { nombreComercial nit } }").execute()
+                .path("obtenerConfiguracionEmpresa").entity(java.util.Map.class).get();
+        String clinicName = clinic.get("nombreComercial").toString();
+        String clinicNit = clinic.get("nit").toString();
+        String id = generate().reporteId().toString();
+        var xlsx = mvc.perform(get("/api/v1/reports/export/" + id + "/xlsx"))
                 .andExpect(status().isOk()).andExpect(content().contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"reporte-" + id + ".xlsx\""))
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff")).andReturn().getResponse().getContentAsByteArray();
         try (var book = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
-            assertThat(book.getSheetAt(0).getRow(0).getCell(0).getStringCellValue()).isEqualTo("code");
-            assertThat(book.getSheetAt(0).getRow(1).getCell(1).getNumericCellValue()).isGreaterThan(0);
+            var sheet = book.getSheetAt(0);
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo(clinicName);
+            assertThat(sheet.getRow(8).getCell(0).getStringCellValue()).isEqualTo("Consulta: Precios de servicios");
+            assertThat(sheet.getRow(10).getCell(0).getStringCellValue()).isEqualTo("code");
+            assertThat(sheet.getRow(11).getCell(1).getNumericCellValue()).isGreaterThan(0);
+            assertThat(sheet.getRow(11).getCell(1).getCellStyle().getDataFormatString()).isEqualTo("\"Bs \"#,##0.00");
         }
-        byte[] pdf = mvc.perform(get("/api/v1/reports/export/pdf").param("reporteId", id))
+        byte[] pdf = mvc.perform(get("/api/v1/reports/export/" + id + "/pdf"))
                 .andExpect(status().isOk()).andExpect(content().contentType("application/pdf"))
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"reporte-" + id + ".pdf\""))
                 .andReturn().getResponse().getContentAsByteArray();
         try (var reader = new org.openpdf.text.pdf.PdfReader(pdf)) {
             assertThat(reader.getNumberOfPages()).isPositive();
-            assertThat(new org.openpdf.text.pdf.parser.PdfTextExtractor(reader).getTextFromPage(1)).contains("code", "price_bs");
+            assertThat(new org.openpdf.text.pdf.parser.PdfTextExtractor(reader).getTextFromPage(1))
+                    .contains(clinicName, clinicNit, "code", "price_bs", "Bs ");
         }
         verify(model, times(1)).call(any(Prompt.class));
     }
@@ -161,8 +165,8 @@ class ReportsIntegrationTest extends IntegrationTestBase {
                 "SELECT pg_sleep(1) FROM report_income", "SELECT * INTO evil FROM report_income", "UNSUPPORTED",
                 "SELECT * FROM report_income WHERE day BETWEEN '2090-01-01' AND '2090-01-31'"}) {
             givenSql(sql);
-            graphQl.document(QUERY).variable("q", "Ingresos").execute().errors()
-                    .expect(e -> e.getErrorType() == ErrorType.BAD_REQUEST && e.getMessage().equals("Consulta de reporte no permitida")).verify();
+            assertThatThrownBy(() -> tools.generarReporteDinamicoSqlTool("Ingresos"))
+                    .isInstanceOf(BusinessRuleException.class).hasMessage("Consulta de reporte no permitida");
             assertThat(snapshot()).isEqualTo(snapshot);
         }
     }
@@ -226,49 +230,55 @@ class ReportsIntegrationTest extends IntegrationTestBase {
     @Test
     void invalidQuestionsAndUnknownSqlErrorsAreSafe() {
         for (String q : new String[]{" ", "x".repeat(501)}) {
-            graphQl.document(QUERY).variable("q", q).execute().errors()
-                    .expect(e -> e.getErrorType() == ErrorType.BAD_REQUEST && e.getMessage().equals("La pregunta debe tener entre 1 y 500 caracteres")).verify();
+            assertThatThrownBy(() -> tools.generarReporteDinamicoSqlTool(q)).isInstanceOf(BusinessRuleException.class)
+                    .hasMessage("La pregunta debe tener entre 1 y 500 caracteres");
         }
         verify(model, never()).call(any(Prompt.class));
         // Valid grammar but an invalid date: JDBC details and SQL must not escape.
         givenSql("SELECT * FROM report_income WHERE day = 'not-a-date'");
-        graphQl.document(QUERY).variable("q", "Ingresos").execute().errors()
-                .expect(e -> e.getErrorType() == ErrorType.BAD_REQUEST && e.getMessage().equals("No se pudo ejecutar el reporte de forma segura")).verify();
+        assertThatThrownBy(() -> tools.generarReporteDinamicoSqlTool("Ingresos"))
+                .isInstanceOf(BusinessRuleException.class).hasMessage("No se pudo ejecutar el reporte de forma segura");
     }
 
     @Test
     void expiredExportIsTheSameGeneric404AsUnknownOrWrongOwner() throws Exception {
-        String id = generate();
+        String id = generate().reporteId().toString();
         doReturn(clock.instant().plusSeconds(600)).when(clock).instant();
-        mvc.perform(get("/api/v1/reports/export/pdf").param("reporteId", id))
+        mvc.perform(get("/api/v1/reports/export/" + id + "/pdf"))
                 .andExpect(status().isNotFound()).andExpect(content().string("Reporte no disponible"))
                 .andExpect(header().string("Cache-Control", "no-store"));
         verify(model, times(1)).call(any(Prompt.class));
     }
 
     @Test
-    void exportUnknownInvalidFormatMalformedIdAndWrongOwnerHaveFixedSemantics() throws Exception {
-        String id = generate();
-        mvc.perform(get("/api/v1/reports/export/csv").param("reporteId", id))
+    void exportUnknownInvalidFormatMalformedIdWrongOwnerAndTheOldRouteHaveFixedSemantics() throws Exception {
+        String id = generate().reporteId().toString();
+        mvc.perform(get("/api/v1/reports/export/" + id + "/csv"))
                 .andExpect(status().isBadRequest()).andExpect(content().string("Formato de reporte no permitido"));
         for (String candidate : new String[]{"not-a-uuid", UUID.randomUUID().toString()}) {
-            mvc.perform(get("/api/v1/reports/export/pdf").param("reporteId", candidate))
+            mvc.perform(get("/api/v1/reports/export/" + candidate + "/pdf"))
                     .andExpect(status().isNotFound()).andExpect(content().string("Reporte no disponible"));
         }
-        mvc.perform(get("/api/v1/reports/export/pdf").param("reporteId", id)
+        mvc.perform(get("/api/v1/reports/export/" + id + "/pdf")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("other").roles("ADMIN")))
                 .andExpect(status().isNotFound()).andExpect(content().string("Reporte no disponible"));
-        mvc.perform(get("/api/v1/reports/export/pdf"))
-                .andExpect(status().isNotFound()).andExpect(content().string("Reporte no disponible"));
+        // The removed route {format}?reporteId= no longer serves anything, even for the owner with a live report.
+        mvc.perform(get("/api/v1/reports/export/pdf").param("reporteId", id)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/reports/export/xlsx").param("reporteId", id)).andExpect(status().isNotFound());
     }
 
     @Test
-    @WithMockUser(roles = "CAJERO")
+    @WithMockUser(username = "report-cajero", roles = "CAJERO")
     void onlyAdminCanGenerateOrExport() throws Exception {
-        graphQl.document(QUERY).variable("q", "Ingresos").execute().errors()
-                .expect(e -> e.getErrorType() == ErrorType.FORBIDDEN).verify();
-        mvc.perform(get("/api/v1/reports/export/pdf").param("reporteId", UUID.randomUUID().toString()))
-                .andExpect(status().isForbidden());
+        assertThatThrownBy(() -> tools.generarReporteDinamicoSqlTool("Ingresos")).isInstanceOf(AccessDeniedException.class);
+        mvc.perform(get("/api/v1/reports/export/" + UUID.randomUUID() + "/pdf")).andExpect(status().isForbidden());
+        verify(model, never()).call(any(Prompt.class));
+    }
+
+    @Test
+    @WithMockUser(username = "report-recepcion", roles = "RECEPCIONISTA")
+    void receptionistCannotRunTheReportTool() {
+        assertThatThrownBy(() -> tools.generarReporteDinamicoSqlTool("Ingresos")).isInstanceOf(AccessDeniedException.class);
         verify(model, never()).call(any(Prompt.class));
     }
 }

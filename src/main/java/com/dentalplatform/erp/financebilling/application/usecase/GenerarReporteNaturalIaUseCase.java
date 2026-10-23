@@ -42,7 +42,7 @@ public class GenerarReporteNaturalIaUseCase {
         String base = "/api/v1/reports/export/";
         var response = new ReportResponse(id, pregunta,
                 "Resultado agregado de las vistas de reportes; sin datos personales.", sql, result.columns(),
-                json.writeValueAsString(result.rows()), "TABLA", base + "xlsx?reporteId=" + id, base + "pdf?reporteId=" + id);
+                json.writeValueAsString(result.rows()), "TABLA", base + id + "/xlsx", base + id + "/pdf");
         store.put(SecurityContextHolder.getContext().getAuthentication().getName(), response, result);
         return response;
     }

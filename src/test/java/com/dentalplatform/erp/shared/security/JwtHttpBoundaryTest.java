@@ -142,7 +142,7 @@ class JwtHttpBoundaryTest {
         assertThat(denied.statusCode()).isEqualTo(200); // GraphQL carries method denials as FORBIDDEN errors.
         assertThat(denied.body()).contains("FORBIDDEN").doesNotContain("Synthetic JWT");
         var rest = HTTP.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                + "/api/v1/reports/export/pdf?reporteId=" + UUID.randomUUID())).timeout(Duration.ofSeconds(10))
+                + "/api/v1/reports/export/" + UUID.randomUUID() + "/pdf")).timeout(Duration.ofSeconds(10))
                 .header("Authorization", "Bearer " + cashier).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(rest.statusCode()).isEqualTo(403);
         assertThat(snapshot()).isEqualTo(before);

@@ -20,7 +20,8 @@ public class ReportStore {
     public synchronized void put(String owner, ReportResponse response, ReportResult result) {
         purge();
         if (entries.size() >= 64) { entries.remove(entries.keySet().iterator().next()); }
-        entries.put(response.reporteId(), new Entry(owner, clock.instant().plusSeconds(600), response, result));
+        Instant now = clock.instant();
+        entries.put(response.reporteId(), new Entry(owner, now.plusSeconds(600), now, response, result));
     }
 
     public synchronized Optional<Entry> find(String owner, UUID id) {
@@ -34,5 +35,6 @@ public class ReportStore {
         entries.values().removeIf(entry -> !entry.expiresAt().isAfter(now));
     }
 
-    public record Entry(String owner, Instant expiresAt, ReportResponse response, ReportResult result) { }
+    public record Entry(String owner, Instant expiresAt, Instant createdAt, ReportResponse response,
+                        ReportResult result) { }
 }

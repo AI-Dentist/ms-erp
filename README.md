@@ -84,8 +84,8 @@ La ejecución usa pool separado (2 conexiones), transacciones read-only, rollbac
 
 Descargue usando las URLs devueltas, sin ejecutar otra consulta:
 
-- `GET /api/v1/reports/export/xlsx?reporteId=<UUID>`
-- `GET /api/v1/reports/export/pdf?reporteId=<UUID>`
+- `GET /api/v1/reports/export/<UUID>/xlsx`
+- `GET /api/v1/reports/export/<UUID>/pdf`
 
 Los adjuntos usan MIME correspondiente, `Cache-Control: no-store` y `X-Content-Type-Options: nosniff`. Formato inválido: 400; ID ausente/inválido/desconocido, expirado o de otro propietario: 404 `Reporte no disponible`; rol insuficiente: 403. XLSX conserva importes numéricos y texto como celdas de texto, nunca fórmulas. No se guardan archivos.
 

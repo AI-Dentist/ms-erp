@@ -85,7 +85,7 @@ class LocalProfileHttpTest {
 
     @Test
     void preflightFromFrontendOriginIsAllowedWithExactPolicy() throws Exception {
-        for (String path : new String[]{"/graphql", "/api/v1/reports/export/pdf"}) {
+        for (String path : new String[]{"/graphql", "/api/v1/reports/export/" + UUID.randomUUID() + "/pdf"}) {
             HttpResponse<String> response = preflight(port, path, ORIGIN, "POST",
                     "authorization,content-type,idempotency-key,x-dev-user");
             assertThat(response.statusCode()).isEqualTo(200);

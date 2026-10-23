@@ -1,9 +1,9 @@
 package com.dentalplatform.erp.financebilling.application.port;
 
-import com.dentalplatform.erp.financebilling.domain.report.ReportResult;
+import com.dentalplatform.erp.financebilling.application.report.ReportDocument;
 
 public interface ReportExporterPort {
     String format();
     String contentType();
-    byte[] export(ReportResult result);
+    byte[] export(ReportDocument document);
 }
