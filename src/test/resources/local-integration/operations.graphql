@@ -1,0 +1,104 @@
+#@ listarPacientes
+#@vars {"busqueda":"LOCAL"}
+query ListarPacientes($busqueda: String) {
+  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos telefonoWhatsapp }
+}
+
+#@ listarServiciosOdontologicos
+#@vars {"especialidadId":"a2000000-0000-0000-0000-000000000002"}
+query ListarServicios($especialidadId: UUID) {
+  listarServiciosOdontologicos(especialidadId: $especialidadId) {
+    id codigo nombre precioBaseBs especialidad { codigo nombre }
+  }
+}
+
+#@ listarOrdenesCobroPendientes
+#@vars {"estado":"PENDIENTE","pacienteId":null}
+query ListarOrdenes($estado: EstadoOrdenCobro, $pacienteId: UUID) {
+  listarOrdenesCobro(estado: $estado, pacienteId: $pacienteId) {
+    id estado modalidadPago montoTotalBs saldoPendienteBs cantidadCuotas paciente { ciNit nombres }
+  }
+}
+
+#@ obtenerOrdenCobroDetalle
+#@vars {"id":"a7000000-0000-0000-0000-000000000002"}
+query ObtenerOrden($id: UUID!) {
+  obtenerOrdenCobroDetalle(id: $id) {
+    id estado modalidadPago montoSubtotalBs descuentoBs montoTotalBs saldoPendienteBs
+    paciente { id ciNit nombres apellidos }
+    items { servicio { nombre } piezaDental cantidad precioUnitarioBs subtotalBs }
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado fechaPago }
+  }
+}
+
+#@ listarCuotasPendientesPorPaciente
+#@vars {"pacienteId":"a5000000-0000-0000-0000-000000000002"}
+query CuotasPendientes($pacienteId: UUID!) {
+  listarCuotasPendientesPorPaciente(pacienteId: $pacienteId) {
+    id numeroCuota montoCuotaBs fechaVencimiento estado
+  }
+}
+
+#@ cobrarCuotaEnEfectivo
+#@vars {"input":{"cuotaId":"a9000000-0000-0000-0000-000000000001","usuarioCajeroId":"a1000000-0000-0000-0000-000000000002","ciNitCliente":"LOCAL-0001","razonSocialCliente":"Ximena Sintética Cruceña Uno"}}
+mutation CobrarEfectivo($input: CobrarEfectivoInput!) {
+  cobrarCuotaEnEfectivo(input: $input) {
+    id numeroRecibo ciNitCliente razonSocialCliente concepto montoTotalBs fechaEmision
+  }
+}
+
+#@ generarQrPagoFacil
+#@vars {"cuotaId":"a9000000-0000-0000-0000-000000000002","ciNitCliente":"LOCAL-0002","razonSocialCliente":"Rodrigo Sintético Camba Dos"}
+mutation GenerarQr($cuotaId: UUID!, $ciNitCliente: String!, $razonSocialCliente: String!) {
+  generarQrPagoFacil(cuotaId: $cuotaId, ciNitCliente: $ciNitCliente, razonSocialCliente: $razonSocialCliente) {
+    id cuotaId pagofacilTransactionId montoBs estado fechaExpiracion qrImagenBase64
+  }
+}
+
+#@ simularConfirmacionQrDev
+#@vars {"pagofacilTransactionId":"<pagofacilTransactionId devuelto por generarQrPagoFacil>"}
+mutation SimularConfirmacion($pagofacilTransactionId: String!) {
+  simularConfirmacionQrDev(pagofacilTransactionId: $pagofacilTransactionId) {
+    id numeroRecibo montoTotalBs fechaEmision
+  }
+}
+
+#@ configurarPlanDePagos
+#@vars {"input":{"ordenCobroId":"a7000000-0000-0000-0000-000000000003","modalidadPago":"CREDITO","descuentoBs":"0.00","cantidadCuotas":3,"fechaPrimeraCuota":"2026-11-01","intervaloDias":30}}
+mutation ConfigurarPlan($input: ConfigurarPlanPagosInput!) {
+  configurarPlanDePagos(input: $input) {
+    id modalidadPago montoTotalBs saldoPendienteBs cantidadCuotas
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado }
+  }
+}
+
+#@ crearOrdenCobroManual
+#@vars {"input":{"pacienteId":"a5000000-0000-0000-0000-000000000005","odontologoId":"a3000000-0000-0000-0000-000000000001","items":[{"servicioId":"a6000000-0000-0000-0000-000000000003","piezaDental":null,"cantidad":1}],"descuentoBs":"0.00","observaciones":"Orden creada desde prueba local"}}
+mutation CrearOrden($input: CrearOrdenCobroInput!) {
+  crearOrdenCobroManual(input: $input) {
+    id estado montoTotalBs saldoPendienteBs cuotas { id numeroCuota montoCuotaBs estado }
+  }
+}
+
+#@ registrarEgresoCaja
+#@vars {"input":{"usuarioCajeroId":"a1000000-0000-0000-0000-000000000002","categoria":"INSUMOS","metodoPago":"EFECTIVO","montoBs":"85.50","descripcion":"Guantes y mascarillas (prueba local)"}}
+mutation RegistrarEgreso($input: RegistrarEgresoInput!) {
+  registrarEgresoCaja(input: $input) { id tipoMovimiento categoria metodoPago montoBs descripcion fechaMovimiento }
+}
+
+#@ obtenerFlujoCaja
+#@vars {"fechaInicio":"2026-01-01T00:00:00-04:00","fechaFin":"2099-12-31T23:59:59-04:00"}
+query FlujoCaja($fechaInicio: DateTime!, $fechaFin: DateTime!) {
+  obtenerFlujoCaja(fechaInicio: $fechaInicio, fechaFin: $fechaFin) {
+    totalIngresosBs totalEgresosBs saldoNetoBs
+    movimientos { id tipoMovimiento categoria metodoPago montoBs descripcion fechaMovimiento recibo { numeroRecibo } }
+  }
+}
+
+#@ generarReporteInteligente
+#@vars {"pregunta":"Muéstrame los ingresos por QR y efectivo de esta semana y qué pacientes tienen cuotas pendientes"}
+query GenerarReporte($pregunta: String!) {
+  generarReporteInteligente(pregunta: $pregunta) {
+    reporteId explicacionNatural columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
+  }
+}
