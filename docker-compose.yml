@@ -37,20 +37,38 @@ services:
       timeout: 10s
       retries: 5
 
-  minio:
-    image: minio/minio:latest
-    container_name: erp-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: erp_minio
-      MINIO_ROOT_PASSWORD: erp_minio_password
+  # Local S3 emulator (MinIO no longer publishes public images). DEV ONLY: fixed credentials from
+  # docker/seaweedfs/s3.json, bound to loopback. Anonymous access is denied because identities are configured.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
+    container_name: erp-seaweedfs
+    command: server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:8333:8333"
     volumes:
-      - minio-data:/data
+      - seaweedfs-data:/data
+      - ./docker/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # One-shot, idempotent: creates the private receipts bucket if missing, then exits.
+  seaweedfs-init:
+    image: chrislusf/seaweedfs:4.48
+    container_name: erp-seaweedfs-init
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo s3.bucket.list | weed shell -master=seaweedfs:9333 | grep -qw erp-receipts \
+          || echo s3.bucket.create -name erp-receipts | weed shell -master=seaweedfs:9333
 
 volumes:
   postgres-data:
   rabbitmq-data:
-  minio-data:
+  seaweedfs-data:

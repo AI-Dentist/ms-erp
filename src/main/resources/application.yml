@@ -81,8 +81,8 @@ erp:
     connect-timeout-ms: 1000
     read-timeout-ms: 2000
   receipts:
-    # Explicit development default. Deployments must select minio; never falls back on failure.
-    # Private bucket provisioning and scoped credentials: docs/minio-receipts.md.
+    # Explicit development default. Deployments select s3 (alias: minio); never falls back on failure.
+    # Private bucket provisioning and scoped credentials: docs/s3-receipts.md.
     mode: ${ERP_RECEIPTS_MODE:local}
     storage-dir: ${ERP_RECEIPTS_STORAGE_DIR:${java.io.tmpdir}/erp-recibos}
     minio:
@@ -90,7 +90,9 @@ erp:
       access-key: ${ERP_RECEIPTS_MINIO_ACCESS_KEY:}
       secret-key: ${ERP_RECEIPTS_MINIO_SECRET_KEY:}
       bucket: ${ERP_RECEIPTS_MINIO_BUCKET:}
-      region: ${ERP_RECEIPTS_MINIO_REGION:us-east-1}
+      # provider: aws (IAM credential chain when keys are blank; region required) or s3-compatible (SeaweedFS; static keys).
+      provider: ${ERP_RECEIPTS_MINIO_PROVIDER:s3-compatible}
+      region: ${ERP_RECEIPTS_MINIO_REGION:}
       expiry-seconds: ${ERP_RECEIPTS_MINIO_EXPIRY_SECONDS:300}
       connect-timeout-ms: 1000
       read-timeout-ms: 2000

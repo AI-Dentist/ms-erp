@@ -16,7 +16,7 @@ public final class MinioReceiptStorageAdapter implements ReceiptStoragePort {
     public MinioReceiptStorageAdapter(MinioClient client, String bucket, int expirySeconds) {
         this.client = Objects.requireNonNull(client);
         if (bucket == null || !bucket.matches("[a-z0-9][a-z0-9-]{1,61}[a-z0-9]")
-                || expirySeconds < 1 || expirySeconds > 604800) throw new IllegalArgumentException("Configuración MinIO inválida");
+                || expirySeconds < 1 || expirySeconds > 604800) throw new IllegalArgumentException("Configuración S3 inválida");
         this.bucket = bucket;
         this.expirySeconds = expirySeconds;
     }

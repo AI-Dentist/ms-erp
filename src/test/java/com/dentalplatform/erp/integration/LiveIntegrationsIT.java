@@ -7,6 +7,7 @@ import com.dentalplatform.erp.mastercatalog.application.usecase.CrearConsultorio
 import com.dentalplatform.erp.mastercatalog.infrastructure.outbox.CatalogOutboxDispatcher;
 import com.dentalplatform.erp.support.EmbeddedPostgresSupport;
 import io.minio.*;
+import org.testcontainers.images.builder.Transferable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.*;
@@ -42,10 +43,14 @@ class LiveIntegrationsIT {
             .withEnv("RABBITMQ_DEFAULT_USER", USER).withEnv("RABBITMQ_DEFAULT_PASS", PASSWORD)
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*\\n", 1))
             .withStartupTimeout(Duration.ofSeconds(120));
-    static final GenericContainer<?> MINIO = new GenericContainer<>("minio/minio:RELEASE.2025-09-07T16-13-09Z")
-            .withEnv("MINIO_ROOT_USER", USER).withEnv("MINIO_ROOT_PASSWORD", PASSWORD)
-            .withCommand("server", "/data").withExposedPorts(9000)
-            .waitingFor(Wait.forHttp("/minio/health/ready").forPort(9000))
+    // Same pinned image as docker-compose.yml; identities make anonymous access fail closed.
+    static final String S3_IDENTITIES = "{\"identities\":[{\"name\":\"live\",\"credentials\":[{\"accessKey\":\"" + USER
+            + "\",\"secretKey\":\"" + PASSWORD + "\"}],\"actions\":[\"Admin\",\"Read\",\"Write\",\"List\"]}]}";
+    static final GenericContainer<?> S3 = new GenericContainer<>("chrislusf/seaweedfs:4.48")
+            .withCopyToContainer(Transferable.of(S3_IDENTITIES), "/etc/seaweedfs/s3.json")
+            .withCommand("server", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data")
+            .withExposedPorts(8333, 9333)
+            .waitingFor(Wait.forHttp("/cluster/status").forPort(9333))
             .withStartupTimeout(Duration.ofSeconds(120));
     static boolean started;
     @Autowired ReceiptStoragePort storage;
@@ -60,16 +65,16 @@ class LiveIntegrationsIT {
         if (started) return;
         try {
             RABBIT.start();
-            MINIO.start();
+            S3.start();
             started = true;
         } catch (RuntimeException | Error failure) {
-            MINIO.close();
+            S3.close();
             RABBIT.close();
             throw failure;
         }
     }
 
-    static String endpoint() { return "http://" + MINIO.getHost() + ":" + MINIO.getMappedPort(9000); }
+    static String endpoint() { return "http://" + S3.getHost() + ":" + S3.getMappedPort(8333); }
 
     @DynamicPropertySource static void properties(DynamicPropertyRegistry r) {
         start();
@@ -84,7 +89,7 @@ class LiveIntegrationsIT {
         r.add("spring.rabbitmq.port", () -> RABBIT.getMappedPort(5672));
         r.add("spring.rabbitmq.username", () -> USER);
         r.add("spring.rabbitmq.password", () -> PASSWORD);
-        r.add("erp.receipts.mode", () -> "minio");
+        r.add("erp.receipts.mode", () -> "s3");
         r.add("erp.receipts.minio.endpoint", LiveIntegrationsIT::endpoint);
         r.add("erp.receipts.minio.access-key", () -> USER);
         r.add("erp.receipts.minio.secret-key", () -> PASSWORD);
@@ -92,10 +97,10 @@ class LiveIntegrationsIT {
     }
 
     @AfterAll static void close() {
-        try { MINIO.close(); } finally { RABBIT.close(); }
+        try { S3.close(); } finally { RABBIT.close(); }
     }
 
-    @Test void realPrivateMinioUploadAuthenticatedGetAndPresignedRead() throws Exception {
+    @Test void realPrivateS3UploadAuthenticatedGetAndPresignedRead() throws Exception {
         // Operator provisioning, not an application-side auto-create or policy change.
         try (var client = MinioClient.builder().endpoint(endpoint()).credentials(USER, PASSWORD).region("us-east-1").build()) {
             client.makeBucket(MakeBucketArgs.builder().bucket(BUCKET).build());
@@ -120,11 +125,7 @@ class LiveIntegrationsIT {
     }
 
     @Test void realBrokerOutageRetainsOutboxThenConfirmedRetryAndSagaDelivery() throws Exception {
-        var admin = new RabbitAdmin(connection);
         String queue = "test.catalog." + UUID.randomUUID();
-        admin.declareQueue(new org.springframework.amqp.core.Queue(queue, false, false, true));
-        admin.declareBinding(new Binding(queue, Binding.DestinationType.QUEUE, "dental.topic.exchange",
-                "catalogo.consultorio.creado", null));
         var office = createOffice.ejecutar(new CrearConsultorioCommand("LIVE-" + UUID.randomUUID().toString().substring(0, 8),
                 "Synthetic live office", null));
         UUID eventId = jdbc.queryForObject("SELECT event_id FROM catalog_event_outbox WHERE payload->>'consultorioId'=?",
@@ -139,6 +140,14 @@ class LiveIntegrationsIT {
             controlBroker("start_app");
             connection.resetConnection();
         }
+        // Non-durable queues do not survive stop_app, so bind the probe queue only after the broker is back
+        // and before the retry can publish; otherwise the confirmed message would be unroutable.
+        var admin = new RabbitAdmin(connection);
+        await().atMost(Duration.ofSeconds(20)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
+            admin.declareQueue(new org.springframework.amqp.core.Queue(queue, false, false, true));
+            admin.declareBinding(new Binding(queue, Binding.DestinationType.QUEUE, "dental.topic.exchange",
+                    "catalogo.consultorio.creado", null));
+        });
         await().atMost(Duration.ofSeconds(20)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
             dispatcher.dispatch();
             assertThat(jdbc.queryForObject("SELECT sent_at IS NOT NULL FROM catalog_event_outbox WHERE event_id=?", Boolean.class, eventId)).isTrue();
@@ -146,7 +155,7 @@ class LiveIntegrationsIT {
         Message delivered = rabbit.receive(queue, 5000);
         assertThat(delivered).isNotNull();
         assertThat(delivered.getMessageProperties().getMessageId()).isEqualTo(eventId.toString());
-        assertThat(delivered.getMessageProperties().getDeliveryMode()).isEqualTo(MessageDeliveryMode.PERSISTENT);
+        assertThat(delivered.getMessageProperties().getReceivedDeliveryMode()).isEqualTo(MessageDeliveryMode.PERSISTENT);
         assertThat(json.readTree(delivered.getBody())).isEqualTo(json.readTree(originalPayload));
         assertThat(jdbc.queryForObject("SELECT attempts FROM catalog_event_outbox WHERE event_id=?", Integer.class, eventId)).isGreaterThanOrEqualTo(2);
 
@@ -159,7 +168,10 @@ class LiveIntegrationsIT {
                 "Synthetic saga delivery");
         rabbit.convertAndSend("dental.topic.exchange", "clinica.consulta.finalizada", event);
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
-            var row = jdbc.queryForMap("SELECT estado, monto_total_bs FROM ordenes_cobro WHERE consulta_externa_id=?", consultation);
+            // queryForMap throws on zero rows, which Awaitility would not retry: poll with a list instead.
+            var rows = jdbc.queryForList("SELECT estado, monto_total_bs FROM ordenes_cobro WHERE consulta_externa_id=?", consultation);
+            assertThat(rows).hasSize(1);
+            var row = rows.getFirst();
             assertThat(row.get("estado")).isEqualTo("PENDIENTE");
             assertThat((BigDecimal) row.get("monto_total_bs")).isEqualByComparingTo("250");
         });

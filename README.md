@@ -15,7 +15,7 @@ docker compose up -d
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-Compose inicia PostgreSQL, RabbitMQ y MinIO con credenciales **solo locales**. Flyway aplica las migraciones al arrancar. GraphQL: `http://localhost:8081/graphql`; GraphiQL, únicamente en `dev`: `/graphiql`.
+Compose inicia PostgreSQL, RabbitMQ y SeaweedFS (emulador S3 local; crea el bucket privado `erp-receipts` con `seaweedfs-init`) con credenciales **solo locales**. Flyway aplica las migraciones al arrancar. GraphQL: `http://localhost:8081/graphql`; GraphiQL, únicamente en `dev`: `/graphiql`.
 
 **No exponga `dev` a redes no confiables:** omite Keycloak y cada petición anónima actúa como `admin` con todos los roles. Este bypass requiere la configuración explícita existente `erp.security.dev-mode=true` (el perfil `dev` la activa); no la habilite en despliegues protegidos. Por defecto, o con `false`, se exige JWT. No reutilice credenciales de Compose en producción.
 
@@ -94,7 +94,7 @@ Se mantiene el contrato existente: una respuesta fallida (incluidos errores Grap
 
 ## Recibos, eventos y n8n
 
-- **PDF privados:** el modo local explícito guarda `file:` bajo el directorio temporal del sistema (no es una URL web). Para MinIO configure `ERP_RECEIPTS_MODE=minio`, endpoint, bucket privado preaprovisionado y credenciales de servicio según [docs/minio-receipts.md](docs/minio-receipts.md). GraphQL entrega enlaces presignados solo a ADMIN/CAJERO; no se añade REST. Un fallo de PDF/storage no revierte el pago y no tiene recuperación durable automática: no repita el cobro para reparar un PDF.
+- **PDF privados:** el modo local explícito guarda `file:` bajo el directorio temporal del sistema (no es una URL web). Para S3 configure `ERP_RECEIPTS_MODE=s3`: en local SeaweedFS con claves estáticas; en AWS `ERP_RECEIPTS_MINIO_PROVIDER=aws`, región obligatoria y rol IAM (sin claves estáticas), según [docs/s3-receipts.md](docs/s3-receipts.md). MinIO server ya no se distribuye como imagen pública. GraphQL entrega enlaces presignados solo a ADMIN/CAJERO; no se añade REST. Un fallo de PDF/storage no revierte el pago y no tiene recuperación durable automática: no repita el cobro para reparar un PDF.
 - **Catálogos:** V6 registra los eventos en el outbox junto al agregado/auditoría. El dispatcher exige confirmación ACK sin retorno obligatorio y reintenta con backoff conservando `eventId`. Entrega al menos una vez, no exactamente una vez: consumidores deben deduplicar. Configuración y operación: [docs/catalog-outbox.md](docs/catalog-outbox.md).
 - **n8n optativo:** `N8N_ENABLED=false` no realiza HTTP. Para activarlo configure `N8N_WEBHOOK_URL` en un destino de confianza. Envía solo evento, UUID y número de recibo, después del commit; no datos del paciente. Los timeouts `erp.n8n.connect-timeout-ms`/`read-timeout-ms` son 1000/2000 ms por defecto (acotados a 100–5000 ms). Un error/timeout se registra sin revertir cuota, saldo, movimiento ni recibo; no hay reintento durable. No habilite trazas de payloads.
 
@@ -102,13 +102,13 @@ Se mantienen GraphQL y las dos únicas rutas REST de negocio: callback local Pag
 
 ## Verificación y límites de la evidencia
 
-`./mvnw test` no requiere Docker, Keycloak ni servicios externos: usa PostgreSQL 18 embebido, puertos IA/Rabbit simulados y listeners HTTP loopback reales para JWT/JWKS, MinIO SDK y n8n. Requiere dependencias Maven/binaries ya descargados para ejecutarse sin red. No instala un modelo IA local ni llama al proveedor real PagoFácil.
+`./mvnw test` no requiere Docker, Keycloak ni servicios externos: usa PostgreSQL 18 embebido, puertos IA/Rabbit simulados y listeners HTTP loopback reales para JWT/JWKS, SDK S3 y n8n. Requiere dependencias Maven/binaries ya descargados para ejecutarse sin red. No instala un modelo IA local ni llama al proveedor real PagoFácil.
 
 | Frontera | Evidencia local | Pendiente de aceptación live |
 |---|---|---|
 | JWT | RSA efímera, discovery/JWKS HTTP, bearer contra cadena no-dev: firma/issuer/expiración 401; permisos REST/GraphQL; principal firmado; replay aislado por identidad/roles; rechazos sin cambios de filas/secuencias | Realm y despliegue Keycloak reales, rotación operacional |
 | n8n | HTTP 500 y stall real; timeout configurado 300 ms, pago retorna antes de 4 s y conserva commit; deshabilitado sin HTTP | Servicio n8n desplegado, saturación sostenida |
-| MinIO | SDK real contra stub HTTP, firma, cuerpo, timeout, referencia persistida y autorización GraphQL | Contenedor real, TLS/IAM del despliegue |
+| S3 | SDK real contra stub HTTP, firma, cuerpo, timeout, referencia persistida y autorización GraphQL; modo AWS: cadena de credenciales, región/endpoint y presign con proveedor simulado | SeaweedFS real (perfil live); AWS real, TLS/IAM del despliegue |
 | RabbitMQ | PostgreSQL/outbox real; ACK/NACK/retorno/timeout/retry simulados | Wire real, caída/reanudación y saga por listener |
 | Reportes | SQL, permisos, rechazos sin cambios, propiedad/TTL, PDF/XLSX y bloqueo PostgreSQL | Proveedor IA y script de operador vía `psql` |
 
@@ -124,6 +124,6 @@ bash scripts/verify-integrations.sh
 ./mvnw -Plive-integrations verify
 ```
 
-El perfil ejecuta la suite ordinaria y Failsafe `LiveIntegrationsIT`: contenedores desechables RabbitMQ 4.1.4 y MinIO con puertos aleatorios y credenciales efímeras. Usa los puertos/dispatcher de la aplicación para upload, GET autenticado, GET presignado, denegación anónima, confirmación outbox, caída/reinicio del broker con retry y entrega saga. Solo controla sus propios contenedores; cierre al finalizar y Ryuk para recuperación. Arranque máximo 120 s por contenedor, comandos broker 30 s, esperas 20 s y fork 600 s. No utilice este harness contra servicios compartidos.
+El perfil ejecuta la suite ordinaria y Failsafe `LiveIntegrationsIT`: contenedores desechables RabbitMQ 4.1.4 y SeaweedFS 4.48 (S3) con puertos aleatorios y credenciales efímeras. Usa los puertos/dispatcher de la aplicación para upload, GET autenticado, GET presignado, denegación anónima, confirmación outbox, caída/reinicio del broker con retry y entrega saga. Solo controla sus propios contenedores; cierre al finalizar y Ryuk para recuperación. Arranque máximo 120 s por contenedor, comandos broker 30 s, esperas 20 s y fork 600 s. No utilice este harness contra servicios compartidos.
 
-**Docker no está instalado en este entorno:** se compiló el harness; no se ejecutaron los dos tests live ni Compose. El script falla con exit 1 si falta Docker, y el perfil directo falla si no puede crear contenedores: no hay skip silencioso. Resultados ordinarios: `target/surefire-reports`; live: `target/failsafe-reports`. Esta evidencia no equivale a preparación completa para producción.
+**Última ejecución live (Docker Desktop, SeaweedFS 4.48 + RabbitMQ 4.1.4):** Failsafe `LiveIntegrationsIT` 2/2 (upload S3 real, GET autenticado/presignado, denegación anónima 403; outbox con caída/reinicio del broker y saga). La ejecución de Failsafe se repitió tras corregir dos defectos del propio harness (modo de entrega recibido y espera de la fila de la saga). El script falla con exit 1 si falta Docker: no hay skip silencioso. Resultados ordinarios: `target/surefire-reports`; live: `target/failsafe-reports`. Esto no prueba AWS real ni preparación completa para producción.
