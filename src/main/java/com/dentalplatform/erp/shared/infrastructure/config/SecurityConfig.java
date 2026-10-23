@@ -2,6 +2,7 @@ package com.dentalplatform.erp.shared.infrastructure.config;
 
 import com.dentalplatform.erp.shared.infrastructure.security.DevUserHeaderAuthenticationFilter;
 import com.dentalplatform.erp.shared.infrastructure.security.KeycloakRealmRoleConverter;
+import com.dentalplatform.erp.shared.infrastructure.security.LazyIssuerJwtDecoder;
 import com.dentalplatform.erp.shared.infrastructure.security.LocalDevAuthGuard;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -21,6 +22,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -61,8 +63,9 @@ public class SecurityConfig {
     /**
      * Profile {@code local} only: frontend integration. {@code X-Dev-User} is resolved to an ACTIVE database user whose
      * single role is granted, so method security still applies. No header (and no valid Bearer) means 401; there is
-     * no anonymous all-roles fallback. Bearer JWTs are honoured only when {@code erp.security.local-dev-user.jwt-issuer-uri}
-     * is set explicitly.
+     * no anonymous all-roles fallback. Bearer JWTs are validated against {@code erp.security.local-dev-user.jwt-issuer-uri}
+     * (local Keycloak by default, blank disables them); the issuer is resolved lazily so startup never needs Keycloak.
+     * A Bearer request never falls back to {@code X-Dev-User}.
      */
     @Bean
     @Profile("local")
@@ -80,7 +83,9 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .addFilterBefore(new DevUserHeaderAuthenticationFilter(jdbc), AnonymousAuthenticationFilter.class);
         if (!jwtIssuer.isBlank()) {
-            http.oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter())));
+            JwtDecoder decoder = new LazyIssuerJwtDecoder(jwtIssuer.trim());
+            http.oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.decoder(decoder)
+                    .jwtAuthenticationConverter(jwtConverter())));
         }
         return http.build();
     }

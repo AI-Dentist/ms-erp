@@ -29,8 +29,10 @@ erp:
     local-dev-user:
       # X-Dev-User: <username of an ACTIVE usuarios row>; only that user's role is granted.
       enabled: true
-      # Leave blank: Bearer JWTs are rejected (401). Set to a Keycloak issuer to accept them alongside X-Dev-User.
-      jwt-issuer-uri: ${ERP_LOCAL_JWT_ISSUER_URI:}
+      # Local Keycloak from docker-compose (realm dental-platform, docs/keycloak-local.md). Resolved lazily: MS1 starts
+      # with Keycloak down and Bearer requests get 401 until it is up. Blank disables Bearer JWTs. A Bearer token
+      # always wins over X-Dev-User (the header is then ignored).
+      jwt-issuer-uri: ${ERP_LOCAL_JWT_ISSUER_URI:http://localhost:8180/realms/dental-platform}
   pagofacil:
     # LOCAL MOCK: no PagoFacil credentials. Simulation is also gated on profile dev|local in the controller.
     mock-enabled: true

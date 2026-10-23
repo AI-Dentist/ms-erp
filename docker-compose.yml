@@ -69,6 +69,36 @@ services:
         echo s3.bucket.list | weed shell -master=seaweedfs:9333 | grep -qw erp-receipts \
           || echo s3.bucket.create -name erp-receipts | weed shell -master=seaweedfs:9333
 
+  # Local identity provider for Bearer JWT integration tests. DEV ONLY: start-dev (H2, plain HTTP), fixed realm import
+  # from docker/keycloak/dental-platform-realm.json (synthetic users, dev passwords), bound to loopback.
+  # Admin console credentials below are LOCAL-ONLY defaults, override with KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    container_name: erp-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin-local-only}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./docker/keycloak/dental-platform-realm.json:/opt/keycloak/data/import/dental-platform-realm.json:ro
+    healthcheck:
+      # The image has no curl: plain bash TCP request. Healthy only once the imported realm answers discovery.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /realms/dental-platform/.well-known/openid-configuration HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"issuer"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
 volumes:
   postgres-data:
   rabbitmq-data:

@@ -1,0 +1,176 @@
+{
+  "realm": "dental-platform",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 900,
+  "displayName": "Dental Platform (LOCAL DEV ONLY)",
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "ADMIN (matches roles.codigo in MS1)"
+      },
+      {
+        "name": "CAJERO",
+        "description": "CAJERO (matches roles.codigo in MS1)"
+      },
+      {
+        "name": "RECEPCIONISTA",
+        "description": "RECEPCIONISTA (matches roles.codigo in MS1)"
+      },
+      {
+        "name": "ODONTOLOGO",
+        "description": "ODONTOLOGO (matches roles.codigo in MS1)"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin-scz",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin-scz@local.invalid",
+      "firstName": "Admin",
+      "lastName": "Sintético",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LocalDev2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ]
+    },
+    {
+      "username": "caja-scz",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "caja-scz@local.invalid",
+      "firstName": "Caja",
+      "lastName": "Sintético",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LocalDev2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CAJERO"
+      ]
+    },
+    {
+      "username": "recepcion-scz",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "recepcion-scz@local.invalid",
+      "firstName": "Recepción",
+      "lastName": "Sintético",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LocalDev2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "RECEPCIONISTA"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "mf-erp",
+      "name": "mf-erp (Angular microfrontend, local)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:4201/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4201"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:4201/*"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
+      ],
+      "protocolMappers": [
+        {
+          "name": "ms-erp-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "ms-erp",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "ms1-local-tests",
+      "name": "DEV/TEST ONLY: password grant for automated tests and smoke. NEVER for production.",
+      "description": "DEV/TEST ONLY. Direct access grants (password) enabled for tests/smoke. Never import into production.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {},
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "ms-erp-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "ms-erp",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

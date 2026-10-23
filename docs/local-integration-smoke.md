@@ -57,11 +57,35 @@ Prueba viva por HTTP contra MS1 ya levantado (no la arranca ni la detiene). Solo
 - **RabbitMQ:** en el exchange `dental.topic.exchange` solo existe el binding de `clinica.consulta.finalizada` (cola `erp.consulta.finalizada.queue`). **Ninguna cola está enlazada a `catalogo.*`**: la publicación es `mandatory`, así que el broker responde `NO_ROUTE` y el outbox reintenta con backoff sin marcar `sent_at`. Es el comportamiento diseñado; MS2/MS3 deben declarar sus colas/bindings para recibir los eventos. El smoke solo crea una cola temporal durable `erp-smoke-tmp-<n>` y la borra al salir (comprobado: no queda ninguna).
 - **PDF post-commit:** el PDF se genera tras el commit; el script sondea hasta 10 s (aquí bastó 1 intento).
 
+## Keycloak: Bearer (T7, 2026-10-23)
+
+Keycloak 26.8.1 local (`docker compose up -d keycloak`, realm `dental-platform`, ver [keycloak-local.md](keycloak-local.md)). El smoke tiene una sección 11 opcional (se omite con `SKIP` si el emisor no responde) que obtiene tokens con el cliente de pruebas `ms1-local-tests` y repite las comprobaciones de autorización con `Authorization: Bearer`.
+
+- **Instancia en ejecución en `:8080`** (arrancada antes del cambio, sin emisor): `Bearer` válido de `admin-scz` → **401**; `X-Dev-User` → 200. **Necesita reinicio** para recoger el emisor por defecto. No se reinició.
+- **Segunda instancia corta en `:8090`** (mismo perfil `local` y BD, `ERP_PORT=8090`, terminada después por su PID): `MS1_URL=http://localhost:8090 bash scripts/local-smoke.sh` → **PASS=93 FAIL=0 SKIP=0**, exit 0 (los 80 anteriores + 13 de la sección 11).
+
+| # | Check (Bearer salvo indicación) | Resultado |
+|---|---|---|
+| 11 | tokens `admin-scz`/`caja-scz`/`recepcion-scz` (*password grant*, solo DEV) | `preferred_username`, `aud: ms-erp`, `realm_access.roles` = su rol |
+| 11 | `admin-scz` → `listarUsuarios` | 200, ve `caja-scz` |
+| 11 | `caja-scz` → `listarUsuarios` | 200 + `FORBIDDEN` (igual que con `X-Dev-User`) |
+| 11 | `recepcion-scz` → `obtenerConfiguracionEmpresa` | 200 |
+| 11 | `caja-scz` + `X-Dev-User: admin-scz` | `FORBIDDEN`: gana el Bearer, la cabecera se ignora |
+| 11 | token manipulado (con y sin `X-Dev-User` válido) | 401 / 401 (sin respaldo en la cabecera) |
+| 11 | `admin-scz` → `crearEspecialidad` | 200; `audit_logs.usuario_id` = usuario de BD `admin-scz` |
+| 11 | `caja-scz` → `crearEspecialidad` | `FORBIDDEN`, 0 filas creadas |
+
+**Arranque con Keycloak caído (en vivo):** con `erp-keycloak` detenido se arrancó una instancia `local` en `:8090` → `Started ErpApplication` en 18 s, health 200; un Bearer → **401** (no 500, sin `threw exception` en el log, un `WARN` por intento), `X-Dev-User` → 200. Al arrancar Keycloak (healthy), la misma instancia aceptó un token válido (**200**) sin reiniciar.
+
+**PKCE (cliente `mf-erp`):** `/auth` sin `code_challenge_method` → redirección con `error=invalid_request`; con S256 → 200 (formulario de login); `redirect_uri` ajeno → 400; *password grant* → `unauthorized_client`.
+
+Limitación: se usó `curl`/*password grant*; el flujo interactivo del navegador Angular (login + redirect) no se ejecutó. `LiveIntegrationsIT` (Testcontainers) verifica la configuración de `mf-erp` por la API de administración.
+
 ## No disponible / no probado
 
 - **Proveedor IA (Spring AI / OpenAI):** sin `OPENAI_API_KEY`. No se probó la generación real de SQL, la estructura de tabla/gráfico, ni las descargas `xlsx`/`pdf` de un reporte real (solo 404/403/400 de la ruta). El script lo intenta si el proveedor responde.
 - **PagoFácil real:** solo mock local (`MOCK-…`) y `simularConfirmacionQrDev`; no se probó el callback real ni su firma/credenciales. El webhook `POST /api/v1/webhooks/pagofacil` no se ejercitó en este smoke.
-- **Keycloak / JWT:** sin emisor configurado (`ERP_LOCAL_JWT_ISSUER_URI` vacío); solo se probó `X-Dev-User`. `Authorization: Bearer` no se probó.
+- **Keycloak / JWT:** la tabla de arriba (ejecución del 2026-10-22) solo cubre `X-Dev-User`; el Bearer se probó después, ver "Keycloak: Bearer (T7)".
 - **n8n / WhatsApp:** no configurado; no hay evidencia de entrega de mensajes (confirmar un pago no la demuestra).
 - **Concurrencia:** el smoke es secuencial; la concurrencia de cobros se cubre en los tests de T4, no aquí.
 - **Entrega del consumidor:** no hay consumidor real de `catalogo.*`; solo se verificó la entrega a una cola temporal.

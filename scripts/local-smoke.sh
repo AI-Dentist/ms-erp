@@ -6,6 +6,9 @@
 #   erp-smoke-tmp-<id>, deleted on exit.
 # Env: MS1_URL (default http://localhost:8080), DEV_USER (default admin-scz), RABBIT_API (default http://localhost:15672),
 #      RABBIT_USER/RABBIT_PASS (compose dev defaults), ERP_PG_CONTAINER (default erp-postgres).
+# Optional section 11 (Bearer JWT from the local Keycloak: docker compose up -d keycloak) runs only when KEYCLOAK_ISSUER
+#      (default http://localhost:8180/realms/dental-platform) answers OIDC discovery; otherwise SKIP. Tokens come from the
+#      DEV-ONLY password-grant client KEYCLOAK_TEST_CLIENT (default ms1-local-tests) / KEYCLOAK_TEST_PASSWORD (dev default).
 # Requires: bash, curl, python (3) for JSON handling (jq is not needed). Exit code: 0 all PASS, 1 any FAIL.
 set -euo pipefail
 
@@ -59,6 +62,7 @@ gql() {
   local user="$1" key="$2" q="$3" v="${4:-{\}}" args=()
   Q="$q" V="$v" py -c 'import os,json;print(json.dumps({"query":os.environ["Q"],"variables":json.loads(os.environ["V"])},ensure_ascii=False))' >"$TMP/req.json"
   [ "$user" != "-" ] && args+=(-H "X-Dev-User: $user")
+  [ -n "${BEARER:-}" ] && args+=(-H "Authorization: Bearer $BEARER")
   [ "$key" != "-" ] && args+=(-H "Idempotency-Key: $key")
   STATUS=$(curl -s "${CT[@]}" -o "$TMP/body.json" -D "$TMP/hdr.txt" -w '%{http_code}' -X POST "$BASE/graphql" \
     -H 'Content-Type: application/json' -H "Origin: $ORIGIN" "${args[@]}" --data-binary @"$TMP/req.json" || echo 000)
@@ -345,6 +349,43 @@ if [ "$PSQL_OK" != 1 ]; then skip "outbox" "psql no disponible"; else
   eq "cola temporal recibió el mensaje con routing key $RK" "$(printf '%s' "$MSG" | J 'len([m for m in d if m["routing_key"]=="'$RK'" and "'$PID'" in m["payload"]])')" 1
   RAPI -o /dev/null -X DELETE "$RABBIT_API/api/queues/%2F/$TMPQ"; TMPQ=""
   note "cola temporal eliminada"
+fi
+
+############################################################################
+section "11. Keycloak: Authorization Bearer (opcional, solo si el emisor local responde)"
+KC_ISSUER="${KEYCLOAK_ISSUER:-http://localhost:8180/realms/dental-platform}"
+KC_CLIENT="${KEYCLOAK_TEST_CLIENT:-ms1-local-tests}"
+KC_PASS="${KEYCLOAK_TEST_PASSWORD:-LocalDev2026!}"
+if [ "$(curl -s "${CT[@]}" -o /dev/null -w '%{http_code}' "$KC_ISSUER/.well-known/openid-configuration" || echo 000)" != 200 ]; then
+  skip "Keycloak Bearer" "emisor $KC_ISSUER no responde; docker compose up -d keycloak"
+else
+  kc_token() { # USER -> access_token (empty on failure)
+    curl -s "${CT[@]}" -d grant_type=password -d "client_id=$KC_CLIENT" -d "username=$1" --data-urlencode "password=$KC_PASS" -d scope=openid "$KC_ISSUER/protocol/openid-connect/token" | J 'd["access_token"]'
+  }
+  TA=$(kc_token admin-scz); TC=$(kc_token caja-scz); TR=$(kc_token recepcion-scz)
+  if [ -z "$TA" ] || [ -z "$TC" ] || [ -z "$TR" ]; then bad "tokens de Keycloak para admin-scz/caja-scz/recepcion-scz" "grant de contraseña rechazado"; else
+    ok "tokens obtenidos con el cliente $KC_CLIENT (password grant, solo DEV)" "claims admin-scz: $(printf '%s' "$TA" | cut -d. -f2 | py -c 'import sys,json,base64;t=sys.stdin.read().strip();c=json.loads(base64.urlsafe_b64decode(t+"="*(-len(t)%4)));print({k:c.get(k) for k in ("preferred_username","aud")},c["realm_access"]["roles"])')"
+    Q_USERS='query { listarUsuarios { username } }'
+    BEARER="$TA" gql - - "$Q_USERS"
+    if [ "$STATUS" = 401 ]; then bad "Bearer admin-scz listarUsuarios -> 200" "HTTP 401: esta instancia de MS1 probablemente arrancó sin ERP_LOCAL_JWT_ISSUER_URI; reiníciela con el perfil local actual"
+    else eq "Bearer admin-scz listarUsuarios -> 200" "$STATUS" 200; has "Bearer admin-scz ve los usuarios sembrados" "$BODY" "caja-scz"; fi
+    BEARER="$TC" gql - - "$Q_USERS"; eq "Bearer caja-scz listarUsuarios -> HTTP 200" "$STATUS" 200; eq "Bearer caja-scz listarUsuarios -> FORBIDDEN" "$(errcls)" FORBIDDEN
+    BEARER="$TR" gql - - "$Q_EMP"; eq "Bearer recepcion-scz obtenerConfiguracionEmpresa -> 200" "$STATUS" 200
+    BEARER="$TC" gql admin-scz - "$Q_USERS"; eq "Bearer caja-scz + X-Dev-User admin-scz: la cabecera se ignora (FORBIDDEN)" "$(errcls)" FORBIDDEN
+    POS=$(( ${#TA} - 12 ))
+    TAMPERED="${TA:0:POS}$([ "${TA:POS:1}" = A ] && echo B || echo A)${TA:POS+1}"
+    BEARER="$TAMPERED" gql - - "$Q_USERS"; eq "Bearer manipulado -> 401" "$STATUS" 401
+    BEARER="$TAMPERED" gql admin-scz - "$Q_USERS"; eq "Bearer manipulado + X-Dev-User válido -> 401 (sin respaldo)" "$STATUS" 401
+    SPEC="KCS$RANDOM"
+    BEARER="$TA" gql - "$(uuid)" 'mutation($c:String!){crearEspecialidad(codigo:$c,nombre:"Smoke Bearer"){id}}' "{\"c\":\"$SPEC\"}"
+    SID=$(printf '%s' "$BODY" | J 'd["data"]["crearEspecialidad"]["id"]')
+    if [ -n "$SID" ]; then ok "Bearer admin-scz crearEspecialidad" "id=$SID"; else bad "Bearer admin-scz crearEspecialidad" "HTTP $STATUS ${BODY:0:300}"; fi
+    if [ "$PSQL_OK" = 1 ] && [ -n "$SID" ]; then
+      eq "psql: auditoría atribuida al usuario de BD admin-scz" "$(psql_q "select u.username from audit_logs a join usuarios u on u.id=a.usuario_id where a.entidad_id='$SID'")" admin-scz
+    else skip "psql auditoría Bearer"; fi
+    BEARER="$TC" gql - "$(uuid)" 'mutation{crearEspecialidad(codigo:"KC-DENY",nombre:"Smoke Bearer Denied"){id}}'; eq "Bearer caja-scz crearEspecialidad -> FORBIDDEN" "$(errcls)" FORBIDDEN
+    [ "$PSQL_OK" = 1 ] && eq "psql: la mutación denegada no dejó filas" "$(psql_q "select count(*) from especialidades where codigo='KC-DENY'")" 0 || skip "psql mutación denegada"
+  fi
 fi
 
 ############################################################################

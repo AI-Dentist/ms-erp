@@ -15,11 +15,14 @@ import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.utility.MountableFile;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -33,8 +36,12 @@ import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-/** Explicit Maven profile only. No disabledWithoutDocker/assumptions: engine failure is an error. */
-@SpringBootTest
+/**
+ * Explicit Maven profile only. No disabledWithoutDocker/assumptions: engine failure is an error. Runs under the
+ * {@code local} profile (seeded synthetic users; Bearer JWTs validated against the Keycloak container below).
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("local")
 class LiveIntegrationsIT {
     static final String USER = "test-" + UUID.randomUUID();
     static final String PASSWORD = UUID.randomUUID().toString();
@@ -52,7 +59,21 @@ class LiveIntegrationsIT {
             .withExposedPorts(8333, 9333)
             .waitingFor(Wait.forHttp("/cluster/status").forPort(9333))
             .withStartupTimeout(Duration.ofSeconds(120));
+    // Same pinned image and realm file as docker-compose.yml. Random bootstrap admin per run; bounded startup.
+    static final String KEYCLOAK_ADMIN = "kc-" + UUID.randomUUID();
+    static final String KEYCLOAK_ADMIN_PASSWORD = UUID.randomUUID().toString();
+    static final String REALM = "dental-platform";
+    static final GenericContainer<?> KEYCLOAK = new GenericContainer<>("quay.io/keycloak/keycloak:26.8.1")
+            .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", KEYCLOAK_ADMIN)
+            .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", KEYCLOAK_ADMIN_PASSWORD)
+            .withCopyFileToContainer(MountableFile.forHostPath("docker/keycloak/dental-platform-realm.json"),
+                    "/opt/keycloak/data/import/dental-platform-realm.json")
+            .withCommand("start-dev", "--import-realm")
+            .withExposedPorts(8080)
+            .waitingFor(Wait.forHttp("/realms/" + REALM + "/.well-known/openid-configuration").forPort(8080))
+            .withStartupTimeout(Duration.ofSeconds(300));
     static boolean started;
+    @LocalServerPort int port;
     @Autowired ReceiptStoragePort storage;
     @Autowired CrearConsultorioUseCase createOffice;
     @Autowired CatalogOutboxDispatcher dispatcher;
@@ -66,12 +87,18 @@ class LiveIntegrationsIT {
         try {
             RABBIT.start();
             S3.start();
+            KEYCLOAK.start();
             started = true;
         } catch (RuntimeException | Error failure) {
+            KEYCLOAK.close();
             S3.close();
             RABBIT.close();
             throw failure;
         }
+    }
+
+    static String issuer() {
+        return "http://" + KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(8080) + "/realms/" + REALM;
     }
 
     static String endpoint() { return "http://" + S3.getHost() + ":" + S3.getMappedPort(8333); }
@@ -81,7 +108,7 @@ class LiveIntegrationsIT {
         r.add("spring.datasource.url", () -> EmbeddedPostgresSupport.jdbcUrl("postgres"));
         r.add("spring.datasource.username", () -> "postgres");
         r.add("spring.datasource.password", () -> "postgres");
-        r.add("erp.security.dev-mode", () -> true);
+        r.add("erp.security.local-dev-user.jwt-issuer-uri", LiveIntegrationsIT::issuer);
         r.add("erp.catalog-outbox.enabled", () -> false);
         r.add("erp.catalog-outbox.initial-backoff-ms", () -> 100);
         r.add("erp.catalog-outbox.max-backoff-ms", () -> 100);
@@ -97,7 +124,7 @@ class LiveIntegrationsIT {
     }
 
     @AfterAll static void close() {
-        try { S3.close(); } finally { RABBIT.close(); }
+        try { KEYCLOAK.close(); } finally { try { S3.close(); } finally { RABBIT.close(); } }
     }
 
     @Test void realPrivateS3UploadAuthenticatedGetAndPresignedRead() throws Exception {
@@ -175,6 +202,83 @@ class LiveIntegrationsIT {
             assertThat(row.get("estado")).isEqualTo("PENDIENTE");
             assertThat((BigDecimal) row.get("monto_total_bs")).isEqualByComparingTo("250");
         });
+    }
+
+    // --- Keycloak: real tokens from the imported realm against the running MS1 (profile local) ---------------------
+
+    static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+
+    /** Token endpoint call: returns {@code status:body}. */
+    String tokenRequest(String realm, String body) throws Exception {
+        var response = HTTP.send(HttpRequest.newBuilder(URI.create(issuer().replace("/realms/" + REALM, "/realms/" + realm)
+                        + "/protocol/openid-connect/token")).timeout(Duration.ofSeconds(20))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+        return response.statusCode() + ":" + response.body();
+    }
+
+    String passwordGrant(String client, String username) throws Exception {
+        String result = tokenRequest(REALM, "grant_type=password&client_id=" + client + "&username=" + username
+                + "&password=LocalDev2026!&scope=openid");
+        assertThat(result).startsWith("200:");
+        return json.readTree(result.substring(4)).path("access_token").asString();
+    }
+
+    HttpResponse<String> bearerGraphql(String token, String query) throws Exception {
+        return HTTP.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/graphql"))
+                .timeout(Duration.ofSeconds(10)).header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("query", query)))).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test void keycloakTokensCarryRolesAndDriveServerSideAuthorization() throws Exception {
+        String query = "{ listarUsuarios { username } }";
+        String admin = passwordGrant("ms1-local-tests", "admin-scz");
+        String cashier = passwordGrant("ms1-local-tests", "caja-scz");
+        String[] parts = admin.split("\\.");
+        var claims = json.readTree(new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8));
+        assertThat(claims.path("preferred_username").asString()).isEqualTo("admin-scz");
+        assertThat(claims.path("realm_access").path("roles").toString()).contains("\"ADMIN\"");
+        assertThat(claims.path("aud").toString()).contains("ms-erp");
+
+        var ok = bearerGraphql(admin, query);
+        assertThat(ok.statusCode()).isEqualTo(200);
+        assertThat(ok.body()).contains("admin-scz", "caja-scz").doesNotContain("errors");
+
+        var denied = bearerGraphql(cashier, query);
+        assertThat(denied.statusCode()).isEqualTo(200);
+        assertThat(denied.body()).contains("FORBIDDEN").doesNotContain("admin-scz");
+
+        char original = parts[2].charAt(20);
+        String tampered = parts[0] + "." + parts[1] + "." + parts[2].substring(0, 20) + (original == 'A' ? 'B' : 'A')
+                + parts[2].substring(21);
+        var rejected = bearerGraphql(tampered, query);
+        assertThat(rejected.statusCode()).isEqualTo(401);
+        assertThat(rejected.body()).isEmpty();
+    }
+
+    @Test void mfErpClientIsPublicPkceS256WithoutDirectGrants() throws Exception {
+        String grant = tokenRequest("master", "grant_type=password&client_id=admin-cli&username=" + KEYCLOAK_ADMIN
+                + "&password=" + KEYCLOAK_ADMIN_PASSWORD);
+        assertThat(grant).startsWith("200:");
+        String adminToken = json.readTree(grant.substring(4)).path("access_token").asString();
+        var response = HTTP.send(HttpRequest.newBuilder(URI.create(issuer().replace("/realms/", "/admin/realms/")
+                        + "/clients?clientId=mf-erp")).timeout(Duration.ofSeconds(20))
+                .header("Authorization", "Bearer " + adminToken).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        var client = json.readTree(response.body()).get(0);
+        assertThat(client.path("publicClient").asBoolean()).isTrue();
+        assertThat(client.path("standardFlowEnabled").asBoolean()).isTrue();
+        assertThat(client.path("directAccessGrantsEnabled").asBoolean()).isFalse();
+        assertThat(client.path("implicitFlowEnabled").asBoolean()).isFalse();
+        assertThat(client.path("serviceAccountsEnabled").asBoolean()).isFalse();
+        assertThat(client.path("attributes").path("pkce.code.challenge.method").asString()).isEqualTo("S256");
+        assertThat(client.path("redirectUris").toString()).isEqualTo("[\"http://localhost:4201/*\"]");
+        assertThat(client.path("webOrigins").toString()).isEqualTo("[\"http://localhost:4201\"]");
+        // Behavioural proof: the password grant is refused for the frontend client.
+        assertThat(tokenRequest(REALM, "grant_type=password&client_id=mf-erp&username=admin-scz&password=LocalDev2026!"))
+                .startsWith("400:").contains("unauthorized_client");
     }
 
     static void controlBroker(String command) throws Exception {
