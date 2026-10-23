@@ -33,6 +33,20 @@ type Mutation {
     crearConsultorio(input: CrearConsultorioInput!): Consultorio!
     crearServicioOdontologico(input: CrearServicioInput!): ServicioOdontologico!
 
+    # Updates replace every field of the matching Crear*Input. eliminar* is logical deactivation (never a DELETE),
+    # idempotent, and returns true. Consultorio has no activo column: its deactivation is estado = INACTIVO.
+    actualizarPaciente(id: UUID!, input: ActualizarPacienteInput!): Paciente!
+    actualizarOdontologo(id: UUID!, input: ActualizarOdontologoInput!): Odontologo!
+    actualizarEspecialidad(id: UUID!, input: ActualizarEspecialidadInput!): Especialidad!
+    actualizarConsultorio(id: UUID!, input: ActualizarConsultorioInput!): Consultorio!
+    actualizarServicioOdontologico(id: UUID!, input: ActualizarServicioInput!): ServicioOdontologico!
+    actualizarUsuario(id: UUID!, input: ActualizarUsuarioInput!): Usuario!
+    eliminarPaciente(id: UUID!): Boolean!
+    eliminarOdontologo(id: UUID!): Boolean!
+    eliminarEspecialidad(id: UUID!): Boolean!
+    eliminarConsultorio(id: UUID!): Boolean!
+    eliminarServicioOdontologico(id: UUID!): Boolean!
+
     crearOrdenCobroManual(input: CrearOrdenCobroInput!): OrdenCobro!
     configurarPlanDePagos(input: ConfigurarPlanPagosInput!): OrdenCobro!
 
@@ -93,6 +107,7 @@ type Paciente {
     telefonoWhatsapp: String!
     email: String
     direccion: String
+    activo: Boolean!
 }
 
 type Especialidad {
@@ -100,6 +115,7 @@ type Especialidad {
     codigo: String!
     nombre: String!
     descripcion: String
+    activo: Boolean!
 }
 
 type Odontologo {
@@ -112,6 +128,7 @@ type Odontologo {
     email: String
     porcentajeComision: BigDecimal!
     especialidades: [Especialidad!]!
+    activo: Boolean!
 }
 
 type Consultorio {
@@ -129,6 +146,7 @@ type ServicioOdontologico {
     descripcion: String
     precioBaseBs: BigDecimal!
     especialidad: Especialidad
+    activo: Boolean!
 }
 
 type OrdenCobro {
@@ -269,6 +287,58 @@ input CrearServicioInput {
     nombre: String!
     descripcion: String
     precioBaseBs: BigDecimal!
+}
+
+input ActualizarPacienteInput {
+    ciNit: String!
+    nombres: String!
+    apellidos: String!
+    fechaNacimiento: Date
+    genero: String
+    telefonoWhatsapp: String!
+    email: String
+    direccion: String
+}
+
+input ActualizarOdontologoInput {
+    ci: String!
+    matriculaProfesional: String!
+    nombres: String!
+    apellidos: String!
+    telefono: String!
+    email: String
+    porcentajeComision: BigDecimal!
+    especialidadesIds: [UUID!]!
+}
+
+input ActualizarEspecialidadInput {
+    codigo: String!
+    nombre: String!
+    descripcion: String
+}
+
+"estado, when present, must be DISPONIBLE, MANTENIMIENTO or INACTIVO; omitted keeps the current one"
+input ActualizarConsultorioInput {
+    codigo: String!
+    nombre: String!
+    ubicacion: String
+    estado: String
+}
+
+input ActualizarServicioInput {
+    especialidadId: UUID
+    codigo: String!
+    nombre: String!
+    descripcion: String
+    precioBaseBs: BigDecimal!
+}
+
+"nombreCompleto and email, when omitted, keep their current value; username and password never change"
+input ActualizarUsuarioInput {
+    rolCodigo: String!
+    activo: Boolean!
+    nombreCompleto: String
+    email: String
 }
 
 input OrdenCobroItemInput {

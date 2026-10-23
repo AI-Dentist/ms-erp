@@ -10,4 +10,6 @@ interface ConsultorioJpaRepository extends JpaRepository<ConsultorioJpaEntity, U
     List<ConsultorioJpaEntity> findAllByOrderByCodigoAsc();
 
     boolean existsByCodigo(String codigo);
+
+    boolean existsByCodigoAndIdNot(String codigo, UUID id);
 }

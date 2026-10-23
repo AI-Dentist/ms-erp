@@ -15,5 +15,8 @@ public interface PacienteRepository {
 
     boolean existeCiNit(String ciNit);
 
+    /** Whether another patient (not {@code id}) already uses the CI/NIT. */
+    boolean existeCiNitDeOtro(String ciNit, UUID id);
+
     Paciente guardar(Paciente paciente);
 }

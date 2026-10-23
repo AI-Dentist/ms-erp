@@ -37,6 +37,11 @@ class PacienteRepositoryAdapter implements PacienteRepository {
     }
 
     @Override
+    public boolean existeCiNitDeOtro(String ciNit, UUID id) {
+        return repository.existsByCiNitAndIdNot(ciNit, id);
+    }
+
+    @Override
     public Paciente guardar(Paciente p) {
         return toDomain(repository.save(new PacienteJpaEntity(p.getId(), p.getCiNit(), p.getNombres(),
                 p.getApellidos(), p.getFechaNacimiento(), p.getGenero(), p.getTelefonoWhatsapp(), p.getEmail(),

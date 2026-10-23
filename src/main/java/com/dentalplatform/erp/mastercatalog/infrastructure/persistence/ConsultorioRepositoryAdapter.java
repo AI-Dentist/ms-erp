@@ -5,6 +5,8 @@ import com.dentalplatform.erp.mastercatalog.domain.repository.ConsultorioReposit
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Component
 class ConsultorioRepositoryAdapter implements ConsultorioRepository {
@@ -18,6 +20,16 @@ class ConsultorioRepositoryAdapter implements ConsultorioRepository {
     @Override
     public List<Consultorio> listar() {
         return repository.findAllByOrderByCodigoAsc().stream().map(ConsultorioRepositoryAdapter::toDomain).toList();
+    }
+
+    @Override
+    public Optional<Consultorio> buscarPorId(UUID id) {
+        return repository.findById(id).map(ConsultorioRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public boolean existeCodigoDeOtro(String codigo, UUID id) {
+        return repository.existsByCodigoAndIdNot(codigo, id);
     }
 
     @Override

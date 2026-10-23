@@ -38,14 +38,36 @@ public class Paciente {
     public static Paciente crear(String ciNit, String nombres, String apellidos, LocalDate fechaNacimiento,
                                  String genero, String telefonoWhatsapp, String email, String direccion,
                                  OffsetDateTime now) {
+        return new Paciente(UUID.randomUUID(), ciNit, nombres, apellidos, fechaNacimiento, genero, telefonoWhatsapp,
+                email, direccion, true, now).normalizado(now);
+    }
+
+    /** Replaces every editable field (same rules as creation); identity, state and creation time are kept. */
+    public Paciente actualizar(String ciNit, String nombres, String apellidos, LocalDate fechaNacimiento,
+                               String genero, String telefonoWhatsapp, String email, String direccion,
+                               OffsetDateTime now) {
+        return new Paciente(id, ciNit, nombres, apellidos, fechaNacimiento, genero, telefonoWhatsapp, email, direccion,
+                activo, createdAt).normalizado(now);
+    }
+
+    /** Logical deactivation; blocked while the patient still has unpaid (PENDIENTE or PARCIAL) charge orders. */
+    public Paciente desactivar(long ordenesAbiertas) {
+        if (ordenesAbiertas > 0) {
+            throw new BusinessRuleException("No se puede desactivar el paciente: tiene " + ordenesAbiertas
+                    + " orden(es) de cobro PENDIENTE o PARCIAL");
+        }
+        return new Paciente(id, ciNit, nombres, apellidos, fechaNacimiento, genero, telefonoWhatsapp, email, direccion,
+                false, createdAt);
+    }
+
+    private Paciente normalizado(OffsetDateTime now) {
         if (fechaNacimiento != null && fechaNacimiento.isAfter(now.toLocalDate())) {
             throw new BusinessRuleException("La fecha de nacimiento no puede ser futura");
         }
-        return new Paciente(UUID.randomUUID(), Validaciones.requerido(ciNit, "ciNit"),
-                Validaciones.requerido(nombres, "nombres"), Validaciones.requerido(apellidos, "apellidos"),
-                fechaNacimiento, Validaciones.opcional(genero),
+        return new Paciente(id, Validaciones.requerido(ciNit, "ciNit"), Validaciones.requerido(nombres, "nombres"),
+                Validaciones.requerido(apellidos, "apellidos"), fechaNacimiento, Validaciones.opcional(genero),
                 Validaciones.requerido(telefonoWhatsapp, "telefonoWhatsapp"), Validaciones.emailOpcional(email),
-                Validaciones.opcional(direccion), true, now);
+                Validaciones.opcional(direccion), activo, createdAt);
     }
 
     public String nombreCompleto() {

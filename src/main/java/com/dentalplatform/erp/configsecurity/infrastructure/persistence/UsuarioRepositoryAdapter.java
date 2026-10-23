@@ -49,6 +49,16 @@ class UsuarioRepositoryAdapter implements UsuarioRepository {
     }
 
     @Override
+    public boolean existeEmailDeOtro(String email, UUID id) {
+        return repository.existsByEmailAndIdNot(email, id);
+    }
+
+    @Override
+    public List<Usuario> bloquearAdminsActivos() {
+        return repository.bloquearAdminsActivos().stream().map(UsuarioRepositoryAdapter::toDomain).toList();
+    }
+
+    @Override
     public Usuario guardar(Usuario u) {
         RolJpaEntity rol = roles.getReferenceById(u.getRol().id());
         return toDomain(repository.save(new UsuarioJpaEntity(u.getId(), u.getKeycloakId(), rol, u.getUsername(),

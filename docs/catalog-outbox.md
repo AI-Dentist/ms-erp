@@ -11,6 +11,30 @@ Catalog creation now commits its aggregate, audit entry and PostgreSQL outbox ev
 - Connection exceptions, NACK, return, timeout and local sender saturation retain the row for retry. A late ACK after timeout cannot mark it delivered. SQL failures during dispatch propagate and roll back its SQL updates.
 - Sent rows are retained. There is no automatic deletion, dead-letter drop or terminal retry limit. Consumers must deduplicate by `eventId`: a crash after broker acceptance but before the SQL commit can cause an **at-least-once duplicate with the same eventId and payload**. This is not exactly-once delivery and does not guarantee global ordering or consumer processing.
 
+## Update and deactivation events (contract extension S9)
+
+The same outbox now also carries **updates and logical deactivations** of patients, dentists and offices. Contract note for the MS2/MS3 teams: these are three **new routing keys** on `dental.topic.exchange`; bind a queue to them to receive the changes. Existing `catalogo.*.creado` keys and payloads are unchanged.
+
+| Routing key | Published when | Payload |
+|---|---|---|
+| `catalogo.paciente.actualizado` | `actualizarPaciente` succeeds; `eliminarPaciente` deactivates an active patient | `eventId`, `pacienteId`, `ciNit`, `nombreCompleto`, `telefonoWhatsapp`, `fechaNacimiento`, `activo` |
+| `catalogo.odontologo.actualizado` | `actualizarOdontologo` succeeds; `eliminarOdontologo` deactivates an active dentist | `eventId`, `odontologoId`, `nombreCompleto`, `matriculaProfesional`, `especialidades` (names), `activo` |
+| `catalogo.consultorio.actualizado` | `actualizarConsultorio` succeeds; `eliminarConsultorio` deactivates an active office | `eventId`, `consultorioId`, `codigo`, `nombre`, `estado` |
+
+```json
+{"eventId": "uuid", "pacienteId": "uuid", "ciNit": "8945123 SC", "nombreCompleto": "Ana María Rojas Vaca",
+ "telefonoWhatsapp": "+59171111111", "fechaNacimiento": "1990-01-31", "activo": false}
+{"eventId": "uuid", "odontologoId": "uuid", "nombreCompleto": "Valeria Roca", "matriculaProfesional": "COL-OD-4512",
+ "especialidades": ["Ortodoncia"], "activo": true}
+{"eventId": "uuid", "consultorioId": "uuid", "codigo": "CONS-01", "nombre": "Consultorio 1", "estado": "INACTIVO"}
+```
+
+- Each payload is the corresponding `*.creado` payload ([SPECS §3.1](../SPECS.md)) plus `activo`; the office payload is identical to `creado` because it already carries `estado`. Every event has a fresh `eventId`, which is also the deduplication key.
+- **Full state, not a diff**: consumers upsert by the entity id. A deactivation is an `actualizado` event with `activo = false` (patients, dentists) or `estado = "INACTIVO"` (offices, which have no `activo` column). `estado` values: `DISPONIBLE`, `MANTENIMIENTO`, `INACTIVO`.
+- Published inside the update transaction like creations: nothing is enqueued for a rejected or rolled-back operation, and repeating a deactivation on an already inactive entity enqueues nothing. Specialties, services and users publish no events (there is no `*.creado` event for them).
+- Delivery guarantees are the ones above (at-least-once, no global ordering). The payload carries no timestamp, so two updates of one entity that arrive out of order cannot be ordered by content; re-read MS1 (`obtenerPacientePorId`, `listarOdontologos(soloActivos: false)`, `listarConsultorios`) when the final state matters.
+- **Listings are unchanged**: `listarPacientes`, `listarEspecialidades` and `listarServiciosOdontologicos` return only active rows, `listarOdontologos` only active ones unless `soloActivos: false`, and `listarConsultorios` returns every office (inactive ones with `estado: "INACTIVO"`). Deactivation never deletes rows, so ids stay valid for existing orders.
+
 ## Configuration
 
 Defaults are declared in Java, so no additional YAML import is required. Override with Spring properties/environment variables.

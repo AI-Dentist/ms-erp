@@ -6,6 +6,7 @@ import com.dentalplatform.erp.shared.domain.vo.Money;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Component
@@ -26,6 +27,21 @@ class ServicioOdontologicoRepositoryAdapter implements ServicioOdontologicoRepos
                 ? repository.findByActivoTrueOrderByCodigoAsc()
                 : repository.findByActivoTrueAndEspecialidad_IdOrderByCodigoAsc(especialidadId);
         return found.stream().map(ServicioOdontologicoRepositoryAdapter::toDomain).toList();
+    }
+
+    @Override
+    public Optional<ServicioOdontologico> buscarPorId(UUID id) {
+        return repository.findById(id).map(ServicioOdontologicoRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public boolean existeCodigoDeOtro(String codigo, UUID id) {
+        return repository.existsByCodigoAndIdNot(codigo, id);
+    }
+
+    @Override
+    public long contarActivosPorEspecialidad(UUID especialidadId) {
+        return repository.countByActivoTrueAndEspecialidad_Id(especialidadId);
     }
 
     @Override

@@ -45,18 +45,39 @@ public class Odontologo {
     public static Odontologo crear(String ci, String matriculaProfesional, String nombres, String apellidos,
                                    String telefono, String email, BigDecimal porcentajeComision,
                                    List<Especialidad> especialidades, OffsetDateTime now) {
+        return construir(UUID.randomUUID(), null, ci, matriculaProfesional, nombres, apellidos, telefono, email,
+                porcentajeComision, true, especialidades, now);
+    }
+
+    /** Replaces every editable field and the specialty set; identity, linked user, state and creation time stay. */
+    public Odontologo actualizar(String ci, String matriculaProfesional, String nombres, String apellidos,
+                                 String telefono, String email, BigDecimal porcentajeComision,
+                                 List<Especialidad> especialidades) {
+        return construir(id, usuarioId, ci, matriculaProfesional, nombres, apellidos, telefono, email,
+                porcentajeComision, activo, especialidades, createdAt);
+    }
+
+    public Odontologo desactivar() {
+        return new Odontologo(id, usuarioId, ci, matriculaProfesional, nombres, apellidos, telefono, email,
+                porcentajeComision, false, especialidades, createdAt);
+    }
+
+    private static Odontologo construir(UUID id, UUID usuarioId, String ci, String matriculaProfesional,
+                                        String nombres, String apellidos, String telefono, String email,
+                                        BigDecimal porcentajeComision, boolean activo,
+                                        List<Especialidad> especialidades, OffsetDateTime createdAt) {
         if (porcentajeComision == null) {
             throw new BusinessRuleException("El campo porcentajeComision es obligatorio");
         }
         if (porcentajeComision.signum() < 0 || porcentajeComision.compareTo(MAX_COMISION) > 0) {
             throw new BusinessRuleException("El porcentaje de comisión debe estar entre 0 y 100");
         }
-        return new Odontologo(UUID.randomUUID(), null, Validaciones.requerido(ci, "ci"),
+        return new Odontologo(id, usuarioId, Validaciones.requerido(ci, "ci"),
                 Validaciones.codigo(matriculaProfesional, "matriculaProfesional"),
                 Validaciones.requerido(nombres, "nombres"), Validaciones.requerido(apellidos, "apellidos"),
                 Validaciones.requerido(telefono, "telefono"), Validaciones.emailOpcional(email),
-                porcentajeComision.setScale(2, RoundingMode.HALF_UP), true,
-                especialidades == null ? List.of() : especialidades, now);
+                porcentajeComision.setScale(2, RoundingMode.HALF_UP), activo,
+                especialidades == null ? List.of() : especialidades, createdAt);
     }
 
     public String nombreCompleto() {

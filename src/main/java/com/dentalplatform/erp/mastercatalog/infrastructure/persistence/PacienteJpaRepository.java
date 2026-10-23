@@ -20,4 +20,6 @@ interface PacienteJpaRepository extends JpaRepository<PacienteJpaEntity, UUID> {
     List<PacienteJpaEntity> buscarActivos(@Param("pattern") String pattern);
 
     boolean existsByCiNit(String ciNit);
+
+    boolean existsByCiNitAndIdNot(String ciNit, UUID id);
 }

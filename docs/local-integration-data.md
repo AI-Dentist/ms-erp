@@ -300,3 +300,189 @@ query GenerarReporte($pregunta: String!) {
   }
 }
 ```
+
+### Edición y baja lógica (S9)
+
+Una operación por cada `actualizar*`/`eliminar*` nueva. Un `actualizar*` reemplaza todos los campos del `Crear*Input` equivalente; `eliminar*` es baja lógica (`activo = false`; consultorio → `estado = INACTIVO`), idempotente y devuelve `true`. Reglas, roles y eventos: [frontend-contract-diff.md](frontend-contract-diff.md) y [catalog-outbox.md](catalog-outbox.md).
+
+Cuidado con los datos sembrados: la carga es repetible con `ON CONFLICT DO NOTHING`, así que **no reactiva** lo dado de baja (no hay operación de reactivación salvo `actualizarUsuario` con `activo: true`). Para probar bajas sin perder datos de prueba, cree primero una entidad descartable con `crear*` y use su `id`. `eliminarEspecialidad` sobre `a2…002` responde `BAD_REQUEST` mientras existan servicios u odontólogos activos que la usen (el guardia de S9). `actualizarUsuario` solo funciona con `admin-scz` como actor (`X-Dev-User: admin-scz`) y nadie puede desactivarse a sí mismo.
+
+#### actualizarPaciente
+
+Variables:
+
+```json
+{"id":"a5000000-0000-0000-0000-000000000005","input":{"ciNit":"LOCAL-0005","nombres":"Paciente Sintético","apellidos":"Cinco Editado","fechaNacimiento":"1992-05-05","genero":"FEMENINO","telefonoWhatsapp":"+59170000005","email":null,"direccion":"Dato ficticio editado"}}
+```
+
+Operación:
+
+```graphql
+mutation ActualizarPaciente($id: UUID!, $input: ActualizarPacienteInput!) {
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion activo }
+}
+```
+
+#### eliminarPaciente
+
+Variables:
+
+```json
+{"id":"a5000000-0000-0000-0000-000000000005"}
+```
+
+Operación:
+
+```graphql
+mutation EliminarPaciente($id: UUID!) {
+  eliminarPaciente(id: $id)
+}
+```
+
+#### actualizarOdontologo
+
+Variables:
+
+```json
+{"id":"a3000000-0000-0000-0000-000000000002","input":{"ci":"LOCAL-OD-0002","matriculaProfesional":"LOCAL-MAT-0002","nombres":"Odontólogo","apellidos":"Prueba Camba","telefono":"+59170000102","email":"odontologo.prueba@local.invalid","porcentajeComision":"32.50","especialidadesIds":["a2000000-0000-0000-0000-000000000001","a2000000-0000-0000-0000-000000000002"]}}
+```
+
+Operación:
+
+```graphql
+mutation ActualizarOdontologo($id: UUID!, $input: ActualizarOdontologoInput!) {
+  actualizarOdontologo(id: $id, input: $input) {
+    id ci matriculaProfesional nombres apellidos porcentajeComision activo especialidades { codigo nombre }
+  }
+}
+```
+
+#### eliminarOdontologo
+
+Variables:
+
+```json
+{"id":"a3000000-0000-0000-0000-000000000001"}
+```
+
+Operación:
+
+```graphql
+mutation EliminarOdontologo($id: UUID!) {
+  eliminarOdontologo(id: $id)
+}
+```
+
+#### actualizarEspecialidad
+
+Variables:
+
+```json
+{"id":"a2000000-0000-0000-0000-000000000002","input":{"codigo":"LOC-CIR","nombre":"Cirugía Bucal (local)","descripcion":"Especialidad sintética para pruebas locales"}}
+```
+
+Operación:
+
+```graphql
+mutation ActualizarEspecialidad($id: UUID!, $input: ActualizarEspecialidadInput!) {
+  actualizarEspecialidad(id: $id, input: $input) { id codigo nombre descripcion activo }
+}
+```
+
+#### eliminarEspecialidad
+
+Variables:
+
+```json
+{"id":"a2000000-0000-0000-0000-000000000002"}
+```
+
+Operación:
+
+```graphql
+mutation EliminarEspecialidad($id: UUID!) {
+  eliminarEspecialidad(id: $id)
+}
+```
+
+#### actualizarConsultorio
+
+Variables:
+
+```json
+{"id":"a4000000-0000-0000-0000-000000000002","input":{"codigo":"LOC-C02","nombre":"Consultorio Local 2","ubicacion":"Primer piso (sintético)","estado":"MANTENIMIENTO"}}
+```
+
+Operación:
+
+```graphql
+mutation ActualizarConsultorio($id: UUID!, $input: ActualizarConsultorioInput!) {
+  actualizarConsultorio(id: $id, input: $input) { id codigo nombre ubicacion estado }
+}
+```
+
+#### eliminarConsultorio
+
+Variables:
+
+```json
+{"id":"a4000000-0000-0000-0000-000000000002"}
+```
+
+Operación:
+
+```graphql
+mutation EliminarConsultorio($id: UUID!) {
+  eliminarConsultorio(id: $id)
+}
+```
+
+#### actualizarServicioOdontologico
+
+Variables:
+
+```json
+{"id":"a6000000-0000-0000-0000-000000000003","input":{"especialidadId":"a2000000-0000-0000-0000-000000000001","codigo":"LOC-ODG-PRF","nombre":"Profilaxis Dental Local","descripcion":"Servicio sintético","precioBaseBs":"190.00"}}
+```
+
+Operación:
+
+```graphql
+mutation ActualizarServicio($id: UUID!, $input: ActualizarServicioInput!) {
+  actualizarServicioOdontologico(id: $id, input: $input) {
+    id codigo nombre precioBaseBs activo especialidad { codigo }
+  }
+}
+```
+
+#### eliminarServicioOdontologico
+
+Variables:
+
+```json
+{"id":"a6000000-0000-0000-0000-000000000003"}
+```
+
+Operación:
+
+```graphql
+mutation EliminarServicio($id: UUID!) {
+  eliminarServicioOdontologico(id: $id)
+}
+```
+
+#### actualizarUsuario
+
+Variables:
+
+```json
+{"id":"a1000000-0000-0000-0000-000000000003","input":{"rolCodigo":"RECEPCIONISTA","activo":true,"nombreCompleto":"Recepción Local","email":null}}
+```
+
+Operación:
+
+```graphql
+mutation ActualizarUsuario($id: UUID!, $input: ActualizarUsuarioInput!) {
+  actualizarUsuario(id: $id, input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
+```

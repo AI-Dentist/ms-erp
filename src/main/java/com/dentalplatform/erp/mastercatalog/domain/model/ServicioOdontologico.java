@@ -32,15 +32,31 @@ public class ServicioOdontologico {
 
     public static ServicioOdontologico crear(Especialidad especialidad, String codigo, String nombre,
                                              String descripcion, BigDecimal precioBaseBs, OffsetDateTime now) {
+        return construir(UUID.randomUUID(), especialidad, codigo, nombre, descripcion, precioBaseBs, true, now);
+    }
+
+    /** Replaces the editable fields. Existing charge-order items keep their own price snapshot. */
+    public ServicioOdontologico actualizar(Especialidad especialidad, String codigo, String nombre,
+                                           String descripcion, BigDecimal precioBaseBs) {
+        return construir(id, especialidad, codigo, nombre, descripcion, precioBaseBs, activo, createdAt);
+    }
+
+    public ServicioOdontologico desactivar() {
+        return new ServicioOdontologico(id, especialidad, codigo, nombre, descripcion, precioBase, false, createdAt);
+    }
+
+    private static ServicioOdontologico construir(UUID id, Especialidad especialidad, String codigo, String nombre,
+                                                  String descripcion, BigDecimal precioBaseBs, boolean activo,
+                                                  OffsetDateTime createdAt) {
         if (precioBaseBs == null) {
             throw new BusinessRuleException("El campo precioBaseBs es obligatorio");
         }
         if (precioBaseBs.signum() < 0) {
             throw new BusinessRuleException("El precio base no puede ser negativo");
         }
-        return new ServicioOdontologico(UUID.randomUUID(), especialidad, Validaciones.codigo(codigo, "codigo"),
+        return new ServicioOdontologico(id, especialidad, Validaciones.codigo(codigo, "codigo"),
                 Validaciones.requerido(nombre, "nombre"), Validaciones.opcional(descripcion),
-                Money.of(precioBaseBs), true, now);
+                Money.of(precioBaseBs), activo, createdAt);
     }
 
     public UUID getId() {

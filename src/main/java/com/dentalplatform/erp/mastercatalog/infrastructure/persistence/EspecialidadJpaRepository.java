@@ -10,4 +10,6 @@ interface EspecialidadJpaRepository extends JpaRepository<EspecialidadJpaEntity,
     List<EspecialidadJpaEntity> findByActivoTrueOrderByNombreAsc();
 
     boolean existsByCodigo(String codigo);
+
+    boolean existsByCodigoAndIdNot(String codigo, UUID id);
 }

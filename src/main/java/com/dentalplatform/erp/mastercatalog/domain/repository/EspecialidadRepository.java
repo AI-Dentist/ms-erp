@@ -17,5 +17,8 @@ public interface EspecialidadRepository {
 
     boolean existeCodigo(String codigo);
 
+    /** Whether another specialty (not {@code id}) already uses the code. */
+    boolean existeCodigoDeOtra(String codigo, UUID id);
+
     Especialidad guardar(Especialidad especialidad);
 }

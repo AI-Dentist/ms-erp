@@ -184,3 +184,73 @@ query ListarCuotasPendientesPorPaciente($pacienteId: UUID!) {
   listarCuotasPendientesPorPaciente(pacienteId: $pacienteId) { id numeroCuota montoCuotaBs fechaVencimiento estado }
 }
 #@vars {"pacienteId": "33333333-3333-4333-8333-333333333333"}
+
+#@ ActualizarPaciente
+mutation ActualizarPaciente($id: UUID!, $input: ActualizarPacienteInput!) {
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion activo }
+}
+#@vars {"id": "33333333-3333-4333-8333-333333333333", "input": {"ciNit": "9876543", "nombres": "Ana María", "apellidos": "Rojas Mamani", "fechaNacimiento": "1990-01-31", "genero": "FEMENINO", "telefonoWhatsapp": "+59171111111", "email": null, "direccion": "Calle 5 #10"}}
+
+#@ EliminarPaciente
+mutation EliminarPaciente($id: UUID!) {
+  eliminarPaciente(id: $id)
+}
+#@vars {"id": "33333333-3333-4333-8333-333333333333"}
+
+#@ ActualizarOdontologo
+mutation ActualizarOdontologo($id: UUID!, $input: ActualizarOdontologoInput!) {
+  actualizarOdontologo(id: $id, input: $input) {
+    id ci matriculaProfesional nombres apellidos telefono email porcentajeComision activo especialidades { id nombre }
+  }
+}
+#@vars {"id": "77777777-7777-4777-8777-777777777777", "input": {"ci": "5551234", "matriculaProfesional": "MP-1234", "nombres": "Carlos", "apellidos": "Vaca Justiniano", "telefono": "+59170011223", "email": null, "porcentajeComision": 32.50, "especialidadesIds": ["22222222-2222-4222-8222-222222222222"]}}
+
+#@ EliminarOdontologo
+mutation EliminarOdontologo($id: UUID!) {
+  eliminarOdontologo(id: $id)
+}
+#@vars {"id": "77777777-7777-4777-8777-777777777777"}
+
+#@ ActualizarEspecialidad
+mutation ActualizarEspecialidad($id: UUID!, $input: ActualizarEspecialidadInput!) {
+  actualizarEspecialidad(id: $id, input: $input) { id codigo nombre descripcion activo }
+}
+#@vars {"id": "22222222-2222-4222-8222-222222222222", "input": {"codigo": "PERIO", "nombre": "Periodoncia", "descripcion": "Salud de las encías"}}
+
+#@ EliminarEspecialidad
+mutation EliminarEspecialidad($id: UUID!) {
+  eliminarEspecialidad(id: $id)
+}
+#@vars {"id": "22222222-2222-4222-8222-222222222222"}
+
+#@ ActualizarConsultorio
+mutation ActualizarConsultorio($id: UUID!, $input: ActualizarConsultorioInput!) {
+  actualizarConsultorio(id: $id, input: $input) { id codigo nombre ubicacion estado }
+}
+#@vars {"id": "88888888-8888-4888-8888-888888888888", "input": {"codigo": "CONS-05", "nombre": "Consultorio 5", "ubicacion": "Piso 2", "estado": "MANTENIMIENTO"}}
+
+#@ EliminarConsultorio
+mutation EliminarConsultorio($id: UUID!) {
+  eliminarConsultorio(id: $id)
+}
+#@vars {"id": "88888888-8888-4888-8888-888888888888"}
+
+#@ ActualizarServicioOdontologico
+mutation ActualizarServicioOdontologico($id: UUID!, $input: ActualizarServicioInput!) {
+  actualizarServicioOdontologico(id: $id, input: $input) {
+    id codigo nombre descripcion precioBaseBs activo especialidad { id nombre }
+  }
+}
+#@vars {"id": "44444444-4444-4444-8444-444444444444", "input": {"especialidadId": null, "codigo": "LIMP-01", "nombre": "Limpieza dental", "descripcion": "Profilaxis", "precioBaseBs": 175.00}}
+
+#@ EliminarServicioOdontologico
+mutation EliminarServicioOdontologico($id: UUID!) {
+  eliminarServicioOdontologico(id: $id)
+}
+#@vars {"id": "44444444-4444-4444-8444-444444444444"}
+
+#@ ActualizarUsuario
+mutation ActualizarUsuario($id: UUID!, $input: ActualizarUsuarioInput!) {
+  actualizarUsuario(id: $id, input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
+#@vars {"id": "66666666-6666-4666-8666-666666666666", "input": {"rolCodigo": "RECEPCIONISTA", "activo": true, "nombreCompleto": "Cajero Dos", "email": null}}

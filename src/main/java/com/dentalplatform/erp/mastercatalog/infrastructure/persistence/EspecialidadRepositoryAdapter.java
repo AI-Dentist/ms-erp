@@ -40,6 +40,11 @@ class EspecialidadRepositoryAdapter implements EspecialidadRepository {
     }
 
     @Override
+    public boolean existeCodigoDeOtra(String codigo, UUID id) {
+        return repository.existsByCodigoAndIdNot(codigo, id);
+    }
+
+    @Override
     public Especialidad guardar(Especialidad e) {
         return toDomain(repository.save(toEntity(e)));
     }

@@ -14,11 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 
 @Service
 public class CrearOdontologoUseCase {
@@ -41,7 +38,7 @@ public class CrearOdontologoUseCase {
 
     @Transactional
     public Odontologo ejecutar(CrearOdontologoCommand command) {
-        List<Especialidad> asignadas = resolverEspecialidades(command.especialidadesIds());
+        List<Especialidad> asignadas = EspecialidadesAsignadas.resolver(especialidades, command.especialidadesIds());
         Odontologo nuevo = Odontologo.crear(command.ci(), command.matriculaProfesional(), command.nombres(),
                 command.apellidos(), command.telefono(), command.email(), command.porcentajeComision(), asignadas,
                 OffsetDateTime.now(clock));
@@ -57,17 +54,5 @@ public class CrearOdontologoUseCase {
                 Map.of("matriculaProfesional", guardado.getMatriculaProfesional()));
         eventos.publicar(OdontologoCreadoEvent.de(guardado));
         return guardado;
-    }
-
-    private List<Especialidad> resolverEspecialidades(List<UUID> ids) {
-        Set<UUID> unicos = ids == null ? Set.of() : new LinkedHashSet<>(ids);
-        List<Especialidad> encontradas = especialidades.buscarPorIds(unicos);
-        Set<UUID> encontradasIds = new LinkedHashSet<>();
-        encontradas.forEach(e -> encontradasIds.add(e.getId()));
-        List<UUID> faltantes = unicos.stream().filter(id -> !encontradasIds.contains(id)).toList();
-        if (!faltantes.isEmpty()) {
-            throw new BusinessRuleException("No existen las especialidades: " + faltantes);
-        }
-        return encontradas;
     }
 }

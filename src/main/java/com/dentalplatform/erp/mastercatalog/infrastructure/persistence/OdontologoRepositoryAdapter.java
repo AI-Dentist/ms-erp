@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 @Component
 class OdontologoRepositoryAdapter implements OdontologoRepository {
@@ -30,6 +32,11 @@ class OdontologoRepositoryAdapter implements OdontologoRepository {
     }
 
     @Override
+    public Optional<Odontologo> buscarPorId(UUID id) {
+        return repository.findById(id).map(OdontologoRepositoryAdapter::toDomain);
+    }
+
+    @Override
     public boolean existeCi(String ci) {
         return repository.existsByCi(ci);
     }
@@ -37,6 +44,21 @@ class OdontologoRepositoryAdapter implements OdontologoRepository {
     @Override
     public boolean existeMatricula(String matriculaProfesional) {
         return repository.existsByMatriculaProfesional(matriculaProfesional);
+    }
+
+    @Override
+    public boolean existeCiDeOtro(String ci, UUID id) {
+        return repository.existsByCiAndIdNot(ci, id);
+    }
+
+    @Override
+    public boolean existeMatriculaDeOtro(String matriculaProfesional, UUID id) {
+        return repository.existsByMatriculaProfesionalAndIdNot(matriculaProfesional, id);
+    }
+
+    @Override
+    public long contarActivosPorEspecialidad(UUID especialidadId) {
+        return repository.contarActivosPorEspecialidad(especialidadId);
     }
 
     @Override

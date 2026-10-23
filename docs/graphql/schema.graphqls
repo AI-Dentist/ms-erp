@@ -41,6 +41,7 @@ type EmpresaConfig {
 }
 
 type Especialidad {
+  activo: Boolean!
   codigo: String!
   descripcion: String
   id: UUID!
@@ -60,6 +61,16 @@ type MovimientoCaja {
 
 type Mutation {
   actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
+  actualizarConsultorio(id: UUID!, input: ActualizarConsultorioInput!): Consultorio!
+  actualizarEspecialidad(id: UUID!, input: ActualizarEspecialidadInput!): Especialidad!
+  actualizarOdontologo(id: UUID!, input: ActualizarOdontologoInput!): Odontologo!
+  """
+   Updates replace every field of the matching Crear*Input. eliminar* is logical deactivation (never a DELETE),
+   idempotent, and returns true. Consultorio has no activo column: its deactivation is estado = INACTIVO.
+  """
+  actualizarPaciente(id: UUID!, input: ActualizarPacienteInput!): Paciente!
+  actualizarServicioOdontologico(id: UUID!, input: ActualizarServicioInput!): ServicioOdontologico!
+  actualizarUsuario(id: UUID!, input: ActualizarUsuarioInput!): Usuario!
   cobrarCuotaEnEfectivo(input: CobrarEfectivoInput!): Recibo!
   configurarPlanDePagos(input: ConfigurarPlanPagosInput!): OrdenCobro!
   crearConsultorio(input: CrearConsultorioInput!): Consultorio!
@@ -69,12 +80,18 @@ type Mutation {
   crearPaciente(input: CrearPacienteInput!): Paciente!
   crearServicioOdontologico(input: CrearServicioInput!): ServicioOdontologico!
   crearUsuario(input: CrearUsuarioInput!): Usuario!
+  eliminarConsultorio(id: UUID!): Boolean!
+  eliminarEspecialidad(id: UUID!): Boolean!
+  eliminarOdontologo(id: UUID!): Boolean!
+  eliminarPaciente(id: UUID!): Boolean!
+  eliminarServicioOdontologico(id: UUID!): Boolean!
   generarQrPagoFacil(ciNitCliente: String!, cuotaId: UUID!, razonSocialCliente: String!): TransaccionQr!
   registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
   simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
 }
 
 type Odontologo {
+  activo: Boolean!
   apellidos: String!
   ci: String!
   email: String
@@ -113,6 +130,7 @@ type OrdenCobroItem {
 }
 
 type Paciente {
+  activo: Boolean!
   apellidos: String!
   ciNit: String!
   direccion: String
@@ -179,6 +197,7 @@ type Rol {
 }
 
 type ServicioOdontologico {
+  activo: Boolean!
   codigo: String!
   descripcion: String
   especialidad: Especialidad
@@ -247,6 +266,58 @@ scalar DateTime
 
 "RFC 4122 UUID"
 scalar UUID
+
+"estado, when present, must be DISPONIBLE, MANTENIMIENTO or INACTIVO; omitted keeps the current one"
+input ActualizarConsultorioInput {
+  codigo: String!
+  estado: String
+  nombre: String!
+  ubicacion: String
+}
+
+input ActualizarEspecialidadInput {
+  codigo: String!
+  descripcion: String
+  nombre: String!
+}
+
+input ActualizarOdontologoInput {
+  apellidos: String!
+  ci: String!
+  email: String
+  especialidadesIds: [UUID!]!
+  matriculaProfesional: String!
+  nombres: String!
+  porcentajeComision: BigDecimal!
+  telefono: String!
+}
+
+input ActualizarPacienteInput {
+  apellidos: String!
+  ciNit: String!
+  direccion: String
+  email: String
+  fechaNacimiento: Date
+  genero: String
+  nombres: String!
+  telefonoWhatsapp: String!
+}
+
+input ActualizarServicioInput {
+  codigo: String!
+  descripcion: String
+  especialidadId: UUID
+  nombre: String!
+  precioBaseBs: BigDecimal!
+}
+
+"nombreCompleto and email, when omitted, keep their current value; username and password never change"
+input ActualizarUsuarioInput {
+  activo: Boolean!
+  email: String
+  nombreCompleto: String
+  rolCodigo: String!
+}
 
 input CobrarEfectivoInput {
   ciNitCliente: String!

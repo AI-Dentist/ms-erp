@@ -12,4 +12,8 @@ interface ServicioOdontologicoJpaRepository extends JpaRepository<ServicioOdonto
     List<ServicioOdontologicoJpaEntity> findByActivoTrueAndEspecialidad_IdOrderByCodigoAsc(UUID especialidadId);
 
     boolean existsByCodigo(String codigo);
+
+    boolean existsByCodigoAndIdNot(String codigo, UUID id);
+
+    long countByActivoTrueAndEspecialidad_Id(UUID especialidadId);
 }

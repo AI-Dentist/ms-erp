@@ -2,7 +2,7 @@
 
 Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/introspection.json`; ambos se verifican contra el esquema real en `SchemaExportTest` (no pueden desfasarse). Los ejemplos válidos están en `src/test/resources/contract/real-examples.graphql` (apéndice al final, validados por `FrontendExamplesValidationTest`). La instantánea de las operaciones del frontend está en `src/test/resources/contract/frontend-operations.graphql`.
 
-**Regla:** no se tocó ningún contrato del backend. Todo lo de abajo es "qué debe adaptar el frontend", salvo la lista de operaciones sin equivalente, que requiere una decisión.
+**Regla:** ningún contrato existente del backend cambió de significado ni de nulabilidad. S9 (2026-10-23) añadió, solo de forma aditiva, 11 operaciones de edición/baja, 6 inputs `Actualizar*Input` y el campo `activo: Boolean!` en `Paciente`, `Odontologo`, `Especialidad` y `ServicioOdontologico` (sección "Edición y baja lógica (S9)"). Todo lo demás es "qué debe adaptar el frontend"; solo las 3 operaciones de caja/QR sin equivalente siguen requiriendo una decisión.
 
 ## Resumen
 
@@ -11,8 +11,8 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | Estado | Operaciones |
 | --- | --- |
 | OK (válidas tal cual) | 2: `listarEspecialidades`, `generarReporteInteligente` (ver semántica abajo) |
-| Existe con otra forma → el frontend se adapta | 21 (nombres de campos/args/inputs/enums/tipos) |
-| NO EXISTE en backend | 14 |
+| Existe con otra forma → el frontend se adapta | 32: 21 de campos/args/inputs/enums/tipos + las 11 operaciones de S9, que ya existen pero cuyos documentos del frontend siguen usando `ID!`, inputs con otro nombre o campos distintos |
+| NO EXISTE en backend | 3 |
 
 ### Operaciones que el backend NO ofrece
 
@@ -22,11 +22,10 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | `listarLogsAuditoria` | **Adaptar frontend**: usar `listarAuditLogs(limite)`. |
 | `obtenerResumenCaja`, `listarMovimientosCaja` | **Adaptar frontend**: una sola llamada `obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!)` devuelve `totalIngresosBs/totalEgresosBs/saldoNetoBs` y `movimientos[]`. |
 | `consultarEstadoQrPagoFacil` | **Adaptar frontend (provisional)**: no hay consulta por transacción. Hacer polling de `obtenerOrdenCobroDetalle { cuotas { estado fechaPago } }`; la cuota pasa a `PAGADA` al confirmarse. Para obtener el recibo, `obtenerFlujoCaja { movimientos { recibo {...} } }`. **Decisión pendiente (usuario):** si se quiere un polling directo y barato, hace falta una operación NUEVA (`consultarEstadoQr(pagofacilTransactionId): TransaccionQr!`). |
-| `actualizarPaciente`, `actualizarOdontologo`, `actualizarEspecialidad`, `actualizarConsultorio`, `actualizarServicioOdontologico` | **Operación NUEVA en backend — decisión pendiente (usuario).** Hoy el backend solo crea. Sin ellas, las pantallas de edición del frontend no pueden funcionar. |
-| `eliminarPaciente`, `eliminarOdontologo`, `eliminarEspecialidad`, `eliminarConsultorio`, `eliminarServicioOdontologico` | **Operación NUEVA en backend — decisión pendiente (usuario).** Además hay que decidir la semántica (baja lógica vs física; hay referencias desde órdenes de cobro). Sin ellas, ocultar los botones de eliminar. |
-| `actualizarUsuario` | **Operación NUEVA en backend — decisión pendiente (usuario)** (cambio de rol / activar-desactivar). Hoy solo existe `crearUsuario`. |
+| `actualizarPaciente`, `actualizarOdontologo`, `actualizarEspecialidad`, `actualizarConsultorio`, `actualizarServicioOdontologico`, `actualizarUsuario` | **YA EXISTEN (S9).** Adaptar el documento: `$id: UUID!`, input `Actualizar<Entidad>Input` (ver sección S9) y los campos de respuesta reales. |
+| `eliminarPaciente`, `eliminarOdontologo`, `eliminarEspecialidad`, `eliminarConsultorio`, `eliminarServicioOdontologico` | **YA EXISTEN (S9)** como **baja lógica** (`activo = false`; consultorio → `estado = INACTIVO`), nunca borran filas. Solo hay que cambiar `$id: ID!` por `$id: UUID!`; devuelven `Boolean!`. |
 
-(Las 14 que "NO EXISTEN" son: `consultarEstadoQrPagoFacil`, `obtenerResumenCaja`, `listarMovimientosCaja`, 6 `actualizar*` y 5 `eliminar*`. `obtenerOrdenCobro` y `listarLogsAuditoria` son renombres y cuentan en las 21 "adaptar".)
+(Las 3 que "NO EXISTEN" son: `consultarEstadoQrPagoFacil`, `obtenerResumenCaja` y `listarMovimientosCaja`. `obtenerOrdenCobro` y `listarLogsAuditoria` son renombres y cuentan en las 32 "adaptar", junto con los 6 `actualizar*` y 5 `eliminar*` de S9.)
 
 ## Reglas transversales
 
@@ -39,7 +38,7 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | Rangos de caja | `String!` | `DateTime!` | Cambiar tipo de variables y enviar instantes con offset. |
 | Nulabilidad | campos opcionales | casi todo `!`; opcionales reales: `emailContacto`, `Paciente.email/direccion`, `Odontologo.email`, `Consultorio.ubicacion`, `descripcion`, `OrdenCobro.odontologo/consultaExternaId`, `CuotaPago.fechaPago`, `Recibo.pdfUrlS3`, `TransaccionQr.fechaExpiracion`, `MovimientoCaja.recibo` | Que el frontend tolere más campos no nulos de los que modela no rompe nada. Lo que el frontend marca opcional y el backend exige (`telefonoWhatsapp`, `telefono`) hay que volverlo obligatorio en formularios. |
 | Campos extra del backend | — | Campos `!` que el frontend no pide (`reporteId`, `preguntaOriginal`, `enviadoWhatsapp`…) | Sin problema: GraphQL solo devuelve lo pedido. |
-| Roles (servidor) | — | `ANY_ROLE` = ADMIN/CAJERO/RECEPCIONISTA/ODONTOLOGO; lecturas de catálogos y empresa. `ADMIN`: usuarios, auditoría, reportes, actualizar empresa, crear especialidad/odontólogo/consultorio/servicio. `ADMIN`/`RECEPCIONISTA`: `crearPaciente`. `ADMIN`/`CAJERO`/`RECEPCIONISTA`: lecturas y planes de órdenes de cobro, `crearOrdenCobroManual`, `configurarPlanDePagos`, `obtenerFlujoCaja`. `ADMIN`/`CAJERO`: cobro en efectivo, egreso, QR, simulación, `Recibo.pdfUrlS3`. | Ocultar/deshabilitar acciones según rol; el servidor responde `FORBIDDEN` si no corresponde. |
+| Roles (servidor) | — | `ANY_ROLE` = ADMIN/CAJERO/RECEPCIONISTA/ODONTOLOGO; lecturas de catálogos y empresa. `ADMIN`: usuarios, auditoría, reportes, actualizar empresa, crear especialidad/odontólogo/consultorio/servicio. `ADMIN`/`RECEPCIONISTA`: `crearPaciente`, `actualizarPaciente`, `eliminarPaciente`. `ADMIN` (S9): `actualizarOdontologo/Especialidad/Consultorio/ServicioOdontologico/Usuario` y `eliminarOdontologo/Especialidad/Consultorio/ServicioOdontologico`. `ADMIN`/`CAJERO`/`RECEPCIONISTA`: lecturas y planes de órdenes de cobro, `crearOrdenCobroManual`, `configurarPlanDePagos`, `obtenerFlujoCaja`. `ADMIN`/`CAJERO`: cobro en efectivo, egreso, QR, simulación, `Recibo.pdfUrlS3`. | Ocultar/deshabilitar acciones según rol; el servidor responde `FORBIDDEN` si no corresponde. |
 | `Idempotency-Key` | UUID por mutación | Filtro en `POST` con la cabecera; sin cabecera la petición pasa sin protección | Enviarla siempre en mutaciones financieras. |
 
 ## Catálogos
@@ -48,20 +47,20 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | --- | --- | --- | --- |
 | `Paciente.fechaNacimiento` (query y `PacienteInput`) | `Paciente` **no expone** `fechaNacimiento`; solo existe como entrada en `CrearPacienteInput.fechaNacimiento: Date` | NO EXISTE (lectura) | Quitar de los campos pedidos; enviarla solo al crear. Si se necesita leerla → backend nuevo (decisión pendiente). |
 | `PacienteInput` | `CrearPacienteInput`: `ciNit!, nombres!, apellidos!, fechaNacimiento, genero, telefonoWhatsapp!, email, direccion` | renombrar + nulabilidad | Usar el nombre real; `telefonoWhatsapp` es obligatorio; hay `direccion` y `genero` (no leídos en `Paciente` salvo `direccion`). Ver ejemplo `CrearPaciente`. |
-| `crearPaciente(input: PacienteInput!)`, `$id: ID!` | `crearPaciente(input: CrearPacienteInput!)` | tipo distinto | Cambiar el tipo del input. Sin `actualizarPaciente`/`eliminarPaciente`. |
+| `crearPaciente(input: PacienteInput!)`, `$id: ID!` | `crearPaciente(input: CrearPacienteInput!)`; `actualizarPaciente(id: UUID!, input: ActualizarPacienteInput!)`; `eliminarPaciente(id: UUID!): Boolean!` | tipo distinto | Cambiar el tipo del input y `ID!`→`UUID!`. Ver ejemplos `ActualizarPaciente`/`EliminarPaciente`. |
 | `listarPacientes(busqueda)` | igual, devuelve `[Paciente!]!` | OK (salvo `fechaNacimiento`) | — Ver `ListarPacientes`. |
 | `Odontologo.matricula` | `matriculaProfesional` | renombrar | Cambiar nombre. |
 | `Odontologo.especialidad { id nombre }` | `especialidades: [Especialidad!]!` (lista) | tipo distinto | Pasar a lista; el modelo del frontend admite una sola. |
-| `Odontologo.activo` | no existe; `listarOdontologos(soloActivos: Boolean = true)` filtra | NO EXISTE | Quitar el campo; para ver inactivos pasar `soloActivos: false`. |
+| `Odontologo.activo` | `activo: Boolean!` (S9); `listarOdontologos(soloActivos: Boolean = true)` filtra | OK desde S9 | Pedirlo tal cual; para ver inactivos pasar `soloActivos: false`. |
 | `OdontologoInput {nombres, apellidos, matricula, telefono?, especialidadId?, activo}` | `CrearOdontologoInput`: `ci!, matriculaProfesional!, nombres!, apellidos!, telefono!, email, porcentajeComision: BigDecimal!, especialidadesIds: [UUID!]!` | renombrar + campos nuevos obligatorios | Agregar `ci`, `porcentajeComision`, lista `especialidadesIds`; quitar `activo`. Ver `CrearOdontologo`. |
 | `Especialidad {id nombre descripcion}` | además `codigo: String!` | campo extra | OK al leer; pedir `codigo` si se muestra. |
 | `crearEspecialidad(input: EspecialidadInput!)` | `crearEspecialidad(codigo: String!, nombre: String!, descripcion: String)` — **argumentos sueltos, no hay input** | argumento distinto | Enviar tres argumentos; `codigo` es obligatorio. Ver `CrearEspecialidad`. |
-| `Consultorio.activo` | `estado: String!` (valor por defecto `DISPONIBLE`) | renombrar + tipo distinto | Mapear `activo = estado === 'DISPONIBLE'` (lectura). Además hay `codigo!`. |
+| `Consultorio.activo` | `estado: String!` con valores `DISPONIBLE`, `MANTENIMIENTO`, `INACTIVO` (S9; `INACTIVO` = baja lógica) | renombrar + tipo distinto | Mapear `activo = estado !== 'INACTIVO'` (lectura; un consultorio en `MANTENIMIENTO` sigue activo). Además hay `codigo!`. |
 | `ConsultorioInput {nombre, ubicacion, activo}` | `CrearConsultorioInput {codigo!, nombre!, ubicacion}` | renombrar | `codigo` obligatorio; sin `activo`. Ver `CrearConsultorio`. |
 | `ServicioOdontologico.precioBs` | `precioBaseBs: BigDecimal!` | renombrar | Cambiar nombre. |
-| `ServicioOdontologico.activo` | no existe | NO EXISTE | Quitar. |
+| `ServicioOdontologico.activo` | `activo: Boolean!` (S9) | OK desde S9 | Pedirlo tal cual. |
 | `ServicioOdontologicoInput` | `CrearServicioInput {especialidadId, codigo!, nombre!, descripcion, precioBaseBs!}` | renombrar | Ver `CrearServicioOdontologico`. `listarServiciosOdontologicos(especialidadId: UUID)` admite filtro. |
-| `actualizar*`/`eliminar*` de paciente, odontólogo, especialidad, consultorio, servicio | no existen | NO EXISTE | Ver tabla de operaciones faltantes. |
+| `actualizar*`/`eliminar*` de paciente, odontólogo, especialidad, consultorio, servicio | existen desde S9 | renombrar inputs / `ID!`→`UUID!` | Ver sección "Edición y baja lógica (S9)". |
 
 ## Empresa, usuarios y auditoría
 
@@ -70,7 +69,7 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | `obtenerConfiguracionEmpresa { nit razonSocial direccion telefono email ciudad }` | `{ id nombreComercial razonSocial nit direccion telefonoContacto emailContacto monedaSimbolo }`, tipo `EmpresaConfig!` (no nulo) | renombrar | `telefono`→`telefonoContacto`, `email`→`emailContacto`; **`ciudad` no existe** (la ciudad va dentro de `direccion`). Nuevo `nombreComercial`. |
 | `ConfiguracionEmpresaInput` | `EmpresaConfigInput {nombreComercial!, razonSocial!, nit!, direccion!, telefonoContacto!, emailContacto}` | renombrar + nulabilidad | `direccion` y `telefonoContacto` son obligatorios. Solo ADMIN. Ver `ActualizarConfiguracionEmpresa`. |
 | `listarUsuarios { rol }` (string) | `rol: Rol!` (objeto: `id codigo nombre permisos`) | tipo distinto | Pedir `rol { codigo nombre }` y usar `rol.codigo`. Solo ADMIN. Hay `email!`. |
-| `actualizarUsuario(id, input {rol, activo})` | no existe; solo `crearUsuario(input: CrearUsuarioInput!)` con `rolCodigo` | NO EXISTE | Ver tabla de operaciones faltantes. |
+| `actualizarUsuario(id, input {rol, activo})` | `actualizarUsuario(id: UUID!, input: ActualizarUsuarioInput!)` con `{rolCodigo: String!, activo: Boolean!, nombreCompleto, email}` (S9, solo ADMIN) | renombrar | `rol`→`rolCodigo`; `activo` es obligatorio; respuesta con `rol { codigo }` (no escalar). Ver sección S9. |
 | `listarLogsAuditoria(limite)` | `listarAuditLogs(limite: Int = 50)` | renombrar | Solo ADMIN. |
 | `LogAuditoria {id fecha usuario accion entidad detalle}` | `AuditLog {id accion entidadAfectada entidadId detalleJson createdAt}` | renombrar | `fecha`→`createdAt` (`DateTime`), `entidad`→`entidadAfectada`, `detalle`→`detalleJson` (string JSON); **no hay `usuario`**. |
 
@@ -118,6 +117,35 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | `consultaSqlEjecutada?`, `urlDescarga*?` opcionales | no nulos (`String!`) | OK | — |
 | `filasJson` | `String!` con un arreglo JSON de filas | OK | `JSON.parse`. |
 | Pregunta "pacientes con cuotas pendientes" | Las vistas de reportes no contienen datos de pacientes | semántica distinta | Para pacientes con cuotas, usar `listarOrdenesCobro`/`listarCuotasPendientesPorPaciente`. Si falta el proveedor de IA, la operación falla (no hay respuesta simulada). |
+
+## Edición y baja lógica (S9)
+
+Operaciones nuevas, todas aditivas. Un `actualizar*` reemplaza **todos** los campos del `Crear*Input` equivalente (un campo opcional omitido se borra); `eliminar*` es **baja lógica**, nunca un `DELETE`.
+
+| Operación | Roles | Reglas y errores (`BAD_REQUEST` salvo que se indique; ante error no cambia nada: ni fila, ni auditoría, ni outbox) |
+| --- | --- | --- |
+| `actualizarPaciente` | ADMIN, RECEPCIONISTA | `ciNit` único excluyendo al propio paciente; mismas validaciones que `crearPaciente`. Publica `catalogo.paciente.actualizado`. |
+| `eliminarPaciente` | ADMIN, RECEPCIONISTA (igual que `crearPaciente`) | Rechaza si tiene órdenes de cobro `PENDIENTE` o `PARCIAL`. |
+| `actualizarOdontologo` | ADMIN | `ci` y `matriculaProfesional` únicos excluyendo al propio; `especialidadesIds` **reemplaza** el conjunto (id inexistente → error). Publica `catalogo.odontologo.actualizado`. |
+| `eliminarOdontologo` | ADMIN | `activo = false`. |
+| `actualizarEspecialidad` | ADMIN | `codigo` único excluyendo a la propia. No publica evento. |
+| `eliminarEspecialidad` | ADMIN | Rechaza si hay servicios activos u odontólogos activos que la usen. |
+| `actualizarConsultorio` | ADMIN | `codigo` único excluyendo al propio; `estado` opcional (omitido = sin cambio), valores `DISPONIBLE`, `MANTENIMIENTO`, `INACTIVO`. Publica `catalogo.consultorio.actualizado`. |
+| `eliminarConsultorio` | ADMIN | No existe columna `activo`: la baja lógica es `estado = INACTIVO`. |
+| `actualizarServicioOdontologico` | ADMIN | `codigo` único excluyendo al propio; cambiar `precioBaseBs` **no** modifica `orden_cobro_items` ya creados (conservan su `precioUnitarioBs`). No publica evento. |
+| `eliminarServicioOdontologico` | ADMIN | `activo = false`. |
+| `actualizarUsuario` | ADMIN | `rolCodigo` desconocido y `email` duplicado (excluyendo al propio) → error. Nadie puede desactivarse a sí mismo ni quitarse su propio rol `ADMIN`; siempre debe quedar al menos un `ADMIN` activo (también con solicitudes concurrentes: bloqueo de filas). No publica evento. |
+
+- Todo `eliminar*` devuelve `true`, es **idempotente** (repetirlo sobre algo ya inactivo devuelve `true` sin nueva auditoría ni evento) y un id desconocido da `NOT_FOUND`.
+- Auditoría de cada éxito: `PACIENTE_ACTUALIZADO`/`PACIENTE_DESACTIVADO`, `ODONTOLOGO_*`, `ESPECIALIDAD_ACTUALIZADA`/`ESPECIALIDAD_DESACTIVADA`, `CONSULTORIO_ACTUALIZADO`/`CONSULTORIO_DESACTIVADO`, `SERVICIO_ODONTOLOGICO_ACTUALIZADO`/`SERVICIO_ODONTOLOGICO_DESACTIVADO`, `USUARIO_ACTUALIZADO`/`USUARIO_DESACTIVADO`.
+- **Listados sin cambios:** `listarPacientes`, `listarEspecialidades` y `listarServiciosOdontologicos` siguen devolviendo solo activos; `listarOdontologos` solo activos salvo `soloActivos: false`; `listarConsultorios` devuelve todos (los dados de baja salen con `estado: "INACTIVO"`); `obtenerPacientePorId` resuelve también pacientes inactivos (`activo: false`). No hay operación de reactivación (excepto `actualizarUsuario` con `activo: true`).
+- Eventos nuevos y sus payloads: ver [catalog-outbox.md](catalog-outbox.md).
+
+**Qué debe cambiar todavía el frontend** (sus 11 documentos siguen marcados INVALID en la evidencia de abajo, y es lo esperado):
+
+1. Declarar `$id: UUID!` en lugar de `ID!` (los `eliminar*` solo necesitan eso para ser válidos).
+2. Usar los inputs reales: `ActualizarPacienteInput`, `ActualizarOdontologoInput`, `ActualizarEspecialidadInput`, `ActualizarConsultorioInput`, `ActualizarServicioInput` y `ActualizarUsuarioInput` (campos en los ejemplos del Apéndice B, p. ej. `ci`, `porcentajeComision`, `especialidadesIds`, `codigo`, `rolCodigo`).
+3. Pedir los campos de respuesta reales (`matriculaProfesional`, `especialidades { nombre }`, `precioBaseBs`, `rol { codigo }`; `Consultorio` expone `estado`, no `activo`; `Paciente` no expone `fechaNacimiento`).
 
 ## Evidencia por operación (frontend vs esquema servido)
 
@@ -494,4 +522,166 @@ Variables:
 
 ```json
 {"pacienteId": "33333333-3333-4333-8333-333333333333"}
+```
+
+## Apéndice B: ejemplos de edición y baja lógica (S9)
+
+Ejemplos válidos de las 11 operaciones nuevas. Los ids son marcadores: use los reales de `listar*`.
+
+### ActualizarPaciente
+
+```graphql
+mutation ActualizarPaciente($id: UUID!, $input: ActualizarPacienteInput!) {
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion activo }
+}
+```
+
+Variables:
+
+```json
+{"id": "33333333-3333-4333-8333-333333333333", "input": {"ciNit": "9876543", "nombres": "Ana María", "apellidos": "Rojas Mamani", "fechaNacimiento": "1990-01-31", "genero": "FEMENINO", "telefonoWhatsapp": "+59171111111", "email": null, "direccion": "Calle 5 #10"}}
+```
+
+### EliminarPaciente
+
+```graphql
+mutation EliminarPaciente($id: UUID!) {
+  eliminarPaciente(id: $id)
+}
+```
+
+Variables:
+
+```json
+{"id": "33333333-3333-4333-8333-333333333333"}
+```
+
+### ActualizarOdontologo
+
+```graphql
+mutation ActualizarOdontologo($id: UUID!, $input: ActualizarOdontologoInput!) {
+  actualizarOdontologo(id: $id, input: $input) {
+    id ci matriculaProfesional nombres apellidos telefono email porcentajeComision activo especialidades { id nombre }
+  }
+}
+```
+
+Variables:
+
+```json
+{"id": "77777777-7777-4777-8777-777777777777", "input": {"ci": "5551234", "matriculaProfesional": "MP-1234", "nombres": "Carlos", "apellidos": "Vaca Justiniano", "telefono": "+59170011223", "email": null, "porcentajeComision": 32.50, "especialidadesIds": ["22222222-2222-4222-8222-222222222222"]}}
+```
+
+### EliminarOdontologo
+
+```graphql
+mutation EliminarOdontologo($id: UUID!) {
+  eliminarOdontologo(id: $id)
+}
+```
+
+Variables:
+
+```json
+{"id": "77777777-7777-4777-8777-777777777777"}
+```
+
+### ActualizarEspecialidad
+
+```graphql
+mutation ActualizarEspecialidad($id: UUID!, $input: ActualizarEspecialidadInput!) {
+  actualizarEspecialidad(id: $id, input: $input) { id codigo nombre descripcion activo }
+}
+```
+
+Variables:
+
+```json
+{"id": "22222222-2222-4222-8222-222222222222", "input": {"codigo": "PERIO", "nombre": "Periodoncia", "descripcion": "Salud de las encías"}}
+```
+
+### EliminarEspecialidad
+
+```graphql
+mutation EliminarEspecialidad($id: UUID!) {
+  eliminarEspecialidad(id: $id)
+}
+```
+
+Variables:
+
+```json
+{"id": "22222222-2222-4222-8222-222222222222"}
+```
+
+### ActualizarConsultorio
+
+```graphql
+mutation ActualizarConsultorio($id: UUID!, $input: ActualizarConsultorioInput!) {
+  actualizarConsultorio(id: $id, input: $input) { id codigo nombre ubicacion estado }
+}
+```
+
+Variables:
+
+```json
+{"id": "88888888-8888-4888-8888-888888888888", "input": {"codigo": "CONS-05", "nombre": "Consultorio 5", "ubicacion": "Piso 2", "estado": "MANTENIMIENTO"}}
+```
+
+### EliminarConsultorio
+
+```graphql
+mutation EliminarConsultorio($id: UUID!) {
+  eliminarConsultorio(id: $id)
+}
+```
+
+Variables:
+
+```json
+{"id": "88888888-8888-4888-8888-888888888888"}
+```
+
+### ActualizarServicioOdontologico
+
+```graphql
+mutation ActualizarServicioOdontologico($id: UUID!, $input: ActualizarServicioInput!) {
+  actualizarServicioOdontologico(id: $id, input: $input) {
+    id codigo nombre descripcion precioBaseBs activo especialidad { id nombre }
+  }
+}
+```
+
+Variables:
+
+```json
+{"id": "44444444-4444-4444-8444-444444444444", "input": {"especialidadId": null, "codigo": "LIMP-01", "nombre": "Limpieza dental", "descripcion": "Profilaxis", "precioBaseBs": 175.00}}
+```
+
+### EliminarServicioOdontologico
+
+```graphql
+mutation EliminarServicioOdontologico($id: UUID!) {
+  eliminarServicioOdontologico(id: $id)
+}
+```
+
+Variables:
+
+```json
+{"id": "44444444-4444-4444-8444-444444444444"}
+```
+
+### ActualizarUsuario
+
+```graphql
+mutation ActualizarUsuario($id: UUID!, $input: ActualizarUsuarioInput!) {
+  actualizarUsuario(id: $id, input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
+```
+
+Variables:
+
+```json
+{"id": "66666666-6666-4666-8666-666666666666", "input": {"rolCodigo": "RECEPCIONISTA", "activo": true, "nombreCompleto": "Cajero Dos", "email": null}}
 ```

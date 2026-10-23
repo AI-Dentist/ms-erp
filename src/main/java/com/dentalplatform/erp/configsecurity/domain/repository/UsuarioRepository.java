@@ -19,5 +19,14 @@ public interface UsuarioRepository {
 
     boolean existeEmail(String email);
 
+    /** Whether another user (not {@code id}) already uses the email. */
+    boolean existeEmailDeOtro(String email, UUID id);
+
+    /**
+     * Active administrators, read with a row lock held until the transaction ends. Concurrent callers queue up and
+     * re-evaluate which administrators are still active once the previous one commits.
+     */
+    List<Usuario> bloquearAdminsActivos();
+
     Usuario guardar(Usuario usuario);
 }

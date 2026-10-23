@@ -11,6 +11,7 @@ public class Usuario {
     private static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final Pattern USERNAME = Pattern.compile("^[a-z0-9._-]{3,80}$");
     public static final int MIN_PASSWORD_LENGTH = 8;
+    public static final String ROL_ADMIN = "ADMIN";
 
     private final UUID id;
     private final String keycloakId;
@@ -54,6 +55,41 @@ public class Usuario {
         validarPassword(rawPassword);
         return new Usuario(UUID.randomUUID(), null, rol, normalizedUsername, passwordHash, normalizedEmail,
                 EmpresaConfig.requerido(nombreCompleto, "nombreCompleto"), true, now);
+    }
+
+    /**
+     * Changes role, active flag and, when provided, name and email. Username and credentials never change.
+     *
+     * @param actorId            user performing the change, null when it is not a registered user
+     * @param otrosAdminsActivos active administrators other than this user, read under lock by the caller
+     */
+    public Usuario actualizar(UUID actorId, Rol nuevoRol, boolean nuevoActivo, String nuevoNombreCompleto,
+                              String nuevoEmail, long otrosAdminsActivos) {
+        if (nuevoRol == null) {
+            throw new BusinessRuleException("El rol es obligatorio");
+        }
+        boolean esAdminActivo = activo && ROL_ADMIN.equals(rol.codigo());
+        boolean seguiraAdminActivo = nuevoActivo && ROL_ADMIN.equals(nuevoRol.codigo());
+        boolean esElMismo = id.equals(actorId);
+        if (esElMismo && activo && !nuevoActivo) {
+            throw new BusinessRuleException("Un usuario no puede desactivarse a sí mismo");
+        }
+        if (esElMismo && ROL_ADMIN.equals(rol.codigo()) && !ROL_ADMIN.equals(nuevoRol.codigo())) {
+            throw new BusinessRuleException("Un administrador no puede quitarse a sí mismo el rol ADMIN");
+        }
+        if (esAdminActivo && !seguiraAdminActivo && otrosAdminsActivos < 1) {
+            throw new BusinessRuleException("El sistema debe conservar al menos un administrador activo");
+        }
+        String email = this.email;
+        if (nuevoEmail != null) {
+            email = EmpresaConfig.requerido(nuevoEmail, "email").toLowerCase();
+            if (!EMAIL.matcher(email).matches()) {
+                throw new BusinessRuleException("El email no es válido: " + nuevoEmail);
+            }
+        }
+        String nombre = nuevoNombreCompleto == null ? nombreCompleto
+                : EmpresaConfig.requerido(nuevoNombreCompleto, "nombreCompleto");
+        return new Usuario(id, keycloakId, nuevoRol, username, passwordHash, email, nombre, nuevoActivo, createdAt);
     }
 
     public static void validarPassword(String rawPassword) {

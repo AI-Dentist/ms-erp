@@ -1,6 +1,7 @@
 package com.dentalplatform.erp.configsecurity.presentation.graphql;
 
 import com.dentalplatform.erp.configsecurity.application.usecase.ActualizarConfiguracionEmpresaUseCase;
+import com.dentalplatform.erp.configsecurity.application.usecase.ActualizarUsuarioUseCase;
 import com.dentalplatform.erp.configsecurity.application.usecase.ConsultarSeguridadUseCase;
 import com.dentalplatform.erp.configsecurity.application.usecase.CrearUsuarioUseCase;
 import com.dentalplatform.erp.configsecurity.application.usecase.ObtenerConfiguracionEmpresaUseCase;
@@ -16,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 
 import java.util.List;
+import java.util.UUID;
 
 @Controller
 public class ConfigSecurityGraphQLController {
@@ -27,10 +29,13 @@ public class ConfigSecurityGraphQLController {
     private final ActualizarConfiguracionEmpresaUseCase actualizarConfiguracion;
     private final CrearUsuarioUseCase crearUsuario;
     private final ConsultarSeguridadUseCase consultarSeguridad;
+    private final ActualizarUsuarioUseCase actualizarUsuario;
 
     public ConfigSecurityGraphQLController(ObtenerConfiguracionEmpresaUseCase obtenerConfiguracion,
                                            ActualizarConfiguracionEmpresaUseCase actualizarConfiguracion,
-                                           CrearUsuarioUseCase crearUsuario, ConsultarSeguridadUseCase consultarSeguridad) {
+                                           CrearUsuarioUseCase crearUsuario, ConsultarSeguridadUseCase consultarSeguridad,
+                                           ActualizarUsuarioUseCase actualizarUsuario) {
+        this.actualizarUsuario = actualizarUsuario;
         this.obtenerConfiguracion = obtenerConfiguracion;
         this.actualizarConfiguracion = actualizarConfiguracion;
         this.crearUsuario = crearUsuario;
@@ -71,6 +76,12 @@ public class ConfigSecurityGraphQLController {
     @PreAuthorize(ADMIN)
     public Usuario crearUsuario(@Argument CrearUsuarioInput input) {
         return crearUsuario.ejecutar(input.toCommand());
+    }
+
+    @MutationMapping
+    @PreAuthorize(ADMIN)
+    public Usuario actualizarUsuario(@Argument UUID id, @Argument ActualizarUsuarioInput input) {
+        return actualizarUsuario.ejecutar(input.toCommand(id));
     }
 
     @SchemaMapping(typeName = "Rol", field = "permisos")

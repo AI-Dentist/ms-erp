@@ -102,3 +102,73 @@ query GenerarReporte($pregunta: String!) {
     reporteId explicacionNatural columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
   }
 }
+
+#@ actualizarPaciente
+#@vars {"id":"a5000000-0000-0000-0000-000000000005","input":{"ciNit":"LOCAL-0005","nombres":"Paciente Sintético","apellidos":"Cinco Editado","fechaNacimiento":"1992-05-05","genero":"FEMENINO","telefonoWhatsapp":"+59170000005","email":null,"direccion":"Dato ficticio editado"}}
+mutation ActualizarPaciente($id: UUID!, $input: ActualizarPacienteInput!) {
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion activo }
+}
+
+#@ eliminarPaciente
+#@vars {"id":"a5000000-0000-0000-0000-000000000005"}
+mutation EliminarPaciente($id: UUID!) {
+  eliminarPaciente(id: $id)
+}
+
+#@ actualizarOdontologo
+#@vars {"id":"a3000000-0000-0000-0000-000000000002","input":{"ci":"LOCAL-OD-0002","matriculaProfesional":"LOCAL-MAT-0002","nombres":"Odontólogo","apellidos":"Prueba Camba","telefono":"+59170000102","email":"odontologo.prueba@local.invalid","porcentajeComision":"32.50","especialidadesIds":["a2000000-0000-0000-0000-000000000001","a2000000-0000-0000-0000-000000000002"]}}
+mutation ActualizarOdontologo($id: UUID!, $input: ActualizarOdontologoInput!) {
+  actualizarOdontologo(id: $id, input: $input) {
+    id ci matriculaProfesional nombres apellidos porcentajeComision activo especialidades { codigo nombre }
+  }
+}
+
+#@ eliminarOdontologo
+#@vars {"id":"a3000000-0000-0000-0000-000000000001"}
+mutation EliminarOdontologo($id: UUID!) {
+  eliminarOdontologo(id: $id)
+}
+
+#@ actualizarEspecialidad
+#@vars {"id":"a2000000-0000-0000-0000-000000000002","input":{"codigo":"LOC-CIR","nombre":"Cirugía Bucal (local)","descripcion":"Especialidad sintética para pruebas locales"}}
+mutation ActualizarEspecialidad($id: UUID!, $input: ActualizarEspecialidadInput!) {
+  actualizarEspecialidad(id: $id, input: $input) { id codigo nombre descripcion activo }
+}
+
+#@ eliminarEspecialidad
+#@vars {"id":"a2000000-0000-0000-0000-000000000002"}
+mutation EliminarEspecialidad($id: UUID!) {
+  eliminarEspecialidad(id: $id)
+}
+
+#@ actualizarConsultorio
+#@vars {"id":"a4000000-0000-0000-0000-000000000002","input":{"codigo":"LOC-C02","nombre":"Consultorio Local 2","ubicacion":"Primer piso (sintético)","estado":"MANTENIMIENTO"}}
+mutation ActualizarConsultorio($id: UUID!, $input: ActualizarConsultorioInput!) {
+  actualizarConsultorio(id: $id, input: $input) { id codigo nombre ubicacion estado }
+}
+
+#@ eliminarConsultorio
+#@vars {"id":"a4000000-0000-0000-0000-000000000002"}
+mutation EliminarConsultorio($id: UUID!) {
+  eliminarConsultorio(id: $id)
+}
+
+#@ actualizarServicioOdontologico
+#@vars {"id":"a6000000-0000-0000-0000-000000000003","input":{"especialidadId":"a2000000-0000-0000-0000-000000000001","codigo":"LOC-ODG-PRF","nombre":"Profilaxis Dental Local","descripcion":"Servicio sintético","precioBaseBs":"190.00"}}
+mutation ActualizarServicio($id: UUID!, $input: ActualizarServicioInput!) {
+  actualizarServicioOdontologico(id: $id, input: $input) {
+    id codigo nombre precioBaseBs activo especialidad { codigo }
+  }
+}
+
+#@ eliminarServicioOdontologico
+#@vars {"id":"a6000000-0000-0000-0000-000000000003"}
+mutation EliminarServicio($id: UUID!) {
+  eliminarServicioOdontologico(id: $id)
+}
+
+#@ actualizarUsuario
+#@vars {"id":"a1000000-0000-0000-0000-000000000003","input":{"rolCodigo":"RECEPCIONISTA","activo":true,"nombreCompleto":"Recepción Local","email":null}}
+mutation ActualizarUsuario($id: UUID!, $input: ActualizarUsuarioInput!) {
+  actualizarUsuario(id: $id, input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
