@@ -10,7 +10,8 @@ services:
       POSTGRES_PASSWORD: erp_password
       TZ: America/La_Paz
     ports:
-      - "5432:5432"
+      # Override the host port when 5432 is already taken by a local PostgreSQL install (e.g. ERP_DB_HOST_PORT=55432)
+      - "${ERP_DB_HOST_PORT:-5432}:5432"
     volumes:
       # PostgreSQL 18 images keep PGDATA under a versioned subdirectory of /var/lib/postgresql
       - postgres-data:/var/lib/postgresql
