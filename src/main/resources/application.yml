@@ -39,6 +39,14 @@ spring:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/dental-platform}
   ai:
+    mcp:
+      server:
+        protocol: STREAMABLE
+        type: SYNC
+        name: dental-erp-ms1
+        version: 1.0.0
+        streamable-http:
+          mcp-endpoint: /mcp
     openai:
       api-key: ${OPENAI_API_KEY:not-configured}
       chat:

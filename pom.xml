@@ -110,6 +110,11 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
+        <!-- MCP server (Streamable HTTP over WebMVC) exposing ErpMcpToolsService at /mcp -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+        </dependency>
 
         <!-- Private S3-compatible receipt artifacts (official MinIO SDK). -->
         <dependency>
