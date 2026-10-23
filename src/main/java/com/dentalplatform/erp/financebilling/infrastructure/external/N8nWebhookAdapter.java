@@ -7,9 +7,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Opt-in receipt signal, not a patient/clinical payload. No automatic retries or durable outbox. */
+/** Opt-in webhook signals. Receipts carry no patient data; collection reminders carry contact data by design. */
 @Component
 public class N8nWebhookAdapter implements N8nNotificationPort {
     private final boolean enabled;
@@ -30,11 +31,36 @@ public class N8nWebhookAdapter implements N8nNotificationPort {
 
     private static int bounded(int timeout) { return Math.clamp(timeout, 100, 5000); }
 
+    @Override
+    public boolean habilitado() { return enabled && url != null && !url.isBlank(); }
+
+    @Override
     public void notificar(Recibo receipt) {
         if (!enabled) { return; }
         client.post().uri(url).contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("event", "recibo.emitido", "reciboId", receipt.id(),
                         "numeroRecibo", receipt.numeroRecibo()))
                 .retrieve().toBodilessEntity();
+    }
+
+    @Override
+    public void notificarCobranza(CobranzaAlerta alert) {
+        if (!habilitado()) { throw new IllegalStateException("n8n deshabilitado"); }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("event", "cobranza.recordatorio");
+        body.put("cuotaId", alert.cuotaId());
+        body.put("ordenCobroId", alert.ordenCobroId());
+        body.put("pacienteId", alert.pacienteId());
+        body.put("nombrePaciente", alert.nombrePaciente());
+        body.put("telefonoWhatsapp", alert.telefonoWhatsapp());
+        body.put("numeroCuota", alert.numeroCuota());
+        body.put("montoBs", alert.montoBs());
+        body.put("vencimiento", alert.vencimiento());
+        body.put("diasAtraso", alert.diasAtraso());
+        if (alert.qr() != null) {
+            body.put("qrPagoFacil", Map.of("transaccionId", alert.qr().transaccionId(),
+                    "expiraEn", alert.qr().expiraEn(), "imagenBase64", alert.qr().imagenBase64()));
+        }
+        client.post().uri(url).contentType(MediaType.APPLICATION_JSON).body(body).retrieve().toBodilessEntity();
     }
 }

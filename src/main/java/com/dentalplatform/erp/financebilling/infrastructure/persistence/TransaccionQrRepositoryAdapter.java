@@ -26,6 +26,11 @@ class TransaccionQrRepositoryAdapter implements TransaccionQrRepository {
         return repository.findByReference(reference).map(TransaccionQrJpaEntity::toDomain);
     }
 
+    public Optional<TransaccionQr> buscarVigentePorCuota(java.util.UUID cuotaId, java.time.OffsetDateTime ahora) {
+        return repository.findFirstByCuotaIdAndEstadoAndExpiresAfterOrderByCreatedDesc(cuotaId, "GENERADO", ahora)
+                .map(TransaccionQrJpaEntity::toDomain);
+    }
+
     public Optional<TransaccionQr> bloquear(String reference) {
         return repository.bloquear(reference).map(entity -> {
             // The initial reference lookup may be in the first-level cache while another callback commits.

@@ -9,6 +9,9 @@ import java.util.UUID;
 public interface TransaccionQrJpaRepository extends JpaRepository<TransaccionQrJpaEntity, UUID> {
     Optional<TransaccionQrJpaEntity> findByReference(String reference);
 
+    Optional<TransaccionQrJpaEntity> findFirstByCuotaIdAndEstadoAndExpiresAfterOrderByCreatedDesc(
+            UUID cuotaId, String estado, java.time.OffsetDateTime now);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from TransaccionQrJpaEntity t where t.reference = :reference")
     Optional<TransaccionQrJpaEntity> bloquear(@Param("reference") String reference);
