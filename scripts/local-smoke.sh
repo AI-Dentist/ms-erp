@@ -102,8 +102,8 @@ allow_h=$(tr -d '\r' <"$TMP/pre.txt" | grep -i '^access-control-allow-headers:' 
 for h in idempotency-key x-dev-user authorization content-type; do has "preflight allows header $h" "$(printf '%s' "$allow_h" | tr 'A-Z' 'a-z')" "$h"; done
 r=$(pre "$BASE/graphql" "http://evil.example" POST "$H4")
 if [ -z "${r#*|}" ] && { [ "${r%%|*}" = 403 ] || [ "${r%%|*}" = 200 ]; }; then ok "OPTIONS /graphql evil origin: no Allow-Origin" "status ${r%%|*}"; else bad "OPTIONS /graphql evil origin" "$r"; fi
-r=$(pre "$BASE/api/v1/reports/export/pdf" "$ORIGIN" GET "authorization,x-dev-user"); eq "OPTIONS export/pdf status" "${r%%|*}" 200; eq "OPTIONS export/pdf Allow-Origin" "${r#*|}" "$ORIGIN"
-r=$(pre "$BASE/api/v1/reports/export/pdf" "http://evil.example" GET "authorization,x-dev-user")
+r=$(pre "$BASE/api/v1/reports/export/00000000-0000-0000-0000-000000000000/pdf" "$ORIGIN" GET "authorization,x-dev-user"); eq "OPTIONS export/pdf status" "${r%%|*}" 200; eq "OPTIONS export/pdf Allow-Origin" "${r#*|}" "$ORIGIN"
+r=$(pre "$BASE/api/v1/reports/export/00000000-0000-0000-0000-000000000000/pdf" "http://evil.example" GET "authorization,x-dev-user")
 if [ -z "${r#*|}" ]; then ok "OPTIONS export/pdf evil origin: no Allow-Origin" "status ${r%%|*}"; else bad "OPTIONS export/pdf evil origin" "$r"; fi
 
 ############################################################################
@@ -282,27 +282,29 @@ code=$(curl -s "${CT[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/v1/recibos/$
 case "$code" in 404|401) ok "GET /api/v1/recibos/{id}/pdf anónimo" "HTTP $code";; *) bad "GET /api/v1/recibos/{id}/pdf anónimo" "HTTP $code";; esac
 
 ############################################################################
-section "8. Reporte inteligente (IA) y exportaciones"
-PREG="Muéstrame los ingresos por QR y efectivo de esta semana y qué pacientes tienen cuotas pendientes"
-gql "$DEV_USER" - 'query($p:String!){generarReporteInteligente(pregunta:$p){reporteId explicacionNatural columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf}}' "$(P="$PREG" py -c 'import os,json;print(json.dumps({"p":os.environ["P"]},ensure_ascii=False))')"
-RID=$(printf '%s' "$BODY" | J 'd["data"]["generarReporteInteligente"]["reporteId"]')
+section "8. Agente ERP, MCP y exportaciones"
+gql "$DEV_USER" - 'query{obtenerEstadoServidorMcp{activo protocolVersion toolsRegistradas{nombre}}}'
+has "MCP status activo" "$BODY" '"activo":true'
+gql "$DEV_USER" - 'mutation{ejecutarAgenteErp(instruccion:"Monitorea mi negocio",modoAutonomoMonitoreo:true){respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada}}'
+has "agente monitorea sin CRUD" "$BODY" '"accionCrudEjecutada":null'
+gql "$DEV_USER" - 'mutation{ejecutarAgenteErp(instruccion:"Genera un reporte de precios de servicios"){respuestaNaturalAgente reporteGenerado{reporteId columnas tipoGraficoSugerido urlDescargaExcel urlDescargaPdf}}}'
+RID=$(printf '%s' "$BODY" | J 'd["data"]["ejecutarAgenteErp"]["reporteGenerado"]["reporteId"]')
 if [ -n "$RID" ]; then
-  ok "generarReporteInteligente respondió (proveedor IA disponible)" "reporteId=$RID tipoGrafico=$(printf '%s' "$BODY" | J 'd["data"]["generarReporteInteligente"]["tipoGraficoSugerido"]') columnas=$(printf '%s' "$BODY" | J 'd["data"]["generarReporteInteligente"]["columnas"]')"
+  ok "agente generó reporte real" "reporteId=$RID"
   for f in xlsx pdf; do
-    code=$(curl -s "${CT[@]}" -o "$TMP/exp.$f" -w '%{http_code}' -H "X-Dev-User: $DEV_USER" "$BASE/api/v1/reports/export/$f?reporteId=$RID" || echo 000)
+    code=$(curl -s "${CT[@]}" -o "$TMP/exp.$f" -w '%{http_code}' -H "X-Dev-User: $DEV_USER" "$BASE/api/v1/reports/export/$RID/$f" || echo 000)
     eq "export $f del reporte real -> 200" "$code" 200
   done
 else
-  has "generarReporteInteligente sin proveedor IA -> error explícito" "$(errmsg)" "Reportes IA no disponibles: configure el proveedor"
-  echo "NOT AVAILABLE  generarReporteInteligente: HTTP $STATUS error=$(errmsg) clasificación=$(errcls)"
+  bad "reporte mediante agente no disponible" "$BODY"
 fi
 FAKE=$(uuid)
-code=$(curl -s "${CT[@]}" -o "$TMP/e.txt" -w '%{http_code}' -H "X-Dev-User: $DEV_USER" "$BASE/api/v1/reports/export/pdf?reporteId=$FAKE" || echo 000)
+code=$(curl -s "${CT[@]}" -o "$TMP/e.txt" -w '%{http_code}' -H "X-Dev-User: $DEV_USER" "$BASE/api/v1/reports/export/$FAKE/pdf" || echo 000)
 eq "export pdf reporteId aleatorio (admin) -> 404" "$code" 404; eq "  cuerpo" "$(cat "$TMP/e.txt")" "Reporte no disponible"
-code=$(curl -s "${CT[@]}" -o /dev/null -w '%{http_code}' -H "X-Dev-User: recepcion-scz" "$BASE/api/v1/reports/export/pdf?reporteId=$FAKE" || echo 000)
+code=$(curl -s "${CT[@]}" -o /dev/null -w '%{http_code}' -H "X-Dev-User: recepcion-scz" "$BASE/api/v1/reports/export/$FAKE/pdf" || echo 000)
 eq "export pdf como recepcion-scz -> 403" "$code" 403
-code=$(curl -s "${CT[@]}" -o "$TMP/e.txt" -w '%{http_code}' -H "X-Dev-User: $DEV_USER" "$BASE/api/v1/reports/export/csv?reporteId=$FAKE" || echo 000)
-eq "export formato inválido (csv) -> 400" "$code" 400; note "cuerpo: $(cat "$TMP/e.txt")"
+code=$(curl -s "${CT[@]}" -o "$TMP/e.txt" -w '%{http_code}' -H "X-Dev-User: $DEV_USER" "$BASE/api/v1/reports/export/$FAKE/csv" || echo 000)
+eq "export formato inválido (csv) -> 400" "$code" 400
 
 ############################################################################
 section "9. n8n / WhatsApp"

@@ -95,11 +95,16 @@ query FlujoCaja($fechaInicio: DateTime!, $fechaFin: DateTime!) {
   }
 }
 
-#@ generarReporteInteligente
-#@vars {"pregunta":"Muéstrame los ingresos por QR y efectivo de esta semana y qué pacientes tienen cuotas pendientes"}
-query GenerarReporte($pregunta: String!) {
-  generarReporteInteligente(pregunta: $pregunta) {
-    reporteId explicacionNatural columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
+#@ ejecutarAgenteErp
+#@vars {"instruccion":"Genera un reporte de ingresos por método de pago"}
+mutation EjecutarAgenteErp($instruccion: String!) {
+  ejecutarAgenteErp(instruccion: $instruccion) {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
+    notificacionN8nEnviada
+    reporteGenerado {
+      reporteId consultaSqlEjecutada columnas filasJson tipoGraficoSugerido
+      urlDescargaExcel urlDescargaPdf
+    }
   }
 }
 
@@ -171,4 +176,34 @@ mutation EliminarServicio($id: UUID!) {
 #@vars {"id":"a1000000-0000-0000-0000-000000000003","input":{"rolCodigo":"RECEPCIONISTA","activo":true,"nombreCompleto":"Recepción Local","email":null}}
 mutation ActualizarUsuario($id: UUID!, $input: ActualizarUsuarioInput!) {
   actualizarUsuario(id: $id, input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
+
+#@ obtenerEstadoServidorMcp
+#@vars {}
+query EstadoMcp {
+  obtenerEstadoServidorMcp { activo protocolVersion toolsRegistradas { nombre categoria descripcion } }
+}
+
+#@ listarHistorialAgente
+#@vars {}
+query HistorialAgente {
+  listarHistorialAgente(limite: 20) {
+    interaccionId fechaEjecucion instruccionOriginal respuestaNaturalAgente toolsMcpInvocadas
+  }
+}
+
+#@ monitoreoAutonomo
+#@vars {}
+mutation MonitoreoAutonomo {
+  ejecutarAgenteErp(instruccion: "Monitorea mi negocio", modoAutonomoMonitoreo: true) {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada notificacionN8nEnviada
+  }
+}
+
+#@ crearServicioPorAgente
+#@vars {}
+mutation CrearServicioPorAgente {
+  ejecutarAgenteErp(instruccion: "Crear servicio codigo=AGT-DEMO nombre=\"Limpieza demo\" precio=150") {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
+  }
 }

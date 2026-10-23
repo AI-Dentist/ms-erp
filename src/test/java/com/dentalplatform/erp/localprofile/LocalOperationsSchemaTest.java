@@ -44,7 +44,8 @@ class LocalOperationsSchemaTest {
         List<Operation> operations = load();
         assertThat(operations).extracting(Operation::name).contains("listarPacientes", "obtenerOrdenCobroDetalle",
                 "cobrarCuotaEnEfectivo", "generarQrPagoFacil", "simularConfirmacionQrDev", "configurarPlanDePagos",
-                "registrarEgresoCaja", "obtenerFlujoCaja", "generarReporteInteligente");
+                "registrarEgresoCaja", "obtenerFlujoCaja", "ejecutarAgenteErp", "monitoreoAutonomo",
+                "obtenerEstadoServidorMcp", "listarHistorialAgente", "crearServicioPorAgente");
         for (Operation operation : operations) {
             var document = Parser.parse(operation.document());
             assertThat(new Validator().validateDocument(schema, document, Locale.ENGLISH))

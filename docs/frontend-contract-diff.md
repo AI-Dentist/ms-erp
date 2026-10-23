@@ -1,18 +1,20 @@
 # Contrato GraphQL: frontend `mf-erp` vs backend `ms-erp`
 
+> **Migración agente/MCP:** `generarReporteInteligente` fue eliminada. Use `ejecutarAgenteErp`, `listarHistorialAgente` y `obtenerEstadoServidorMcp`; las descargas ahora son `/api/v1/reports/export/{reporteId}/{format}`. El snapshot del frontend se conserva y marca la consulta antigua como INVALID. Las demás operaciones no cambian.
+
 Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/introspection.json`; ambos se verifican contra el esquema real en `SchemaExportTest` (no pueden desfasarse). Los ejemplos válidos están en `src/test/resources/contract/real-examples.graphql` (apéndice al final, validados por `FrontendExamplesValidationTest`). La instantánea de las operaciones del frontend está en `src/test/resources/contract/frontend-operations.graphql`.
 
-**Regla:** ningún contrato existente del backend cambió de significado ni de nulabilidad. S9 (2026-10-23) añadió, solo de forma aditiva, 11 operaciones de edición/baja, 6 inputs `Actualizar*Input` y el campo `activo: Boolean!` en `Paciente`, `Odontologo`, `Especialidad` y `ServicioOdontologico` (sección "Edición y baja lógica (S9)"). Todo lo demás es "qué debe adaptar el frontend"; solo las 3 operaciones de caja/QR sin equivalente siguen requiriendo una decisión.
+**Regla:** fuera de la eliminación solicitada de `generarReporteInteligente` y la nueva ruta de exportación, ningún contrato existente del backend cambia de significado ni de nulabilidad. S9 (2026-10-23) añadió, solo de forma aditiva, 11 operaciones de edición/baja, 6 inputs `Actualizar*Input` y el campo `activo: Boolean!` en `Paciente`, `Odontologo`, `Especialidad` y `ServicioOdontologico` (sección "Edición y baja lógica (S9)"). Todo lo demás es "qué debe adaptar el frontend"; solo las 3 operaciones de caja/QR sin equivalente siguen requiriendo una decisión.
 
 ## Resumen
 
-**37 operaciones del frontend validadas: 2 válidas, 35 inválidas** contra el esquema servido.
+**37 operaciones del frontend validadas: 1 válidas, 36 inválidas** contra el esquema servido.
 
 | Estado | Operaciones |
 | --- | --- |
-| OK (válidas tal cual) | 2: `listarEspecialidades`, `generarReporteInteligente` (ver semántica abajo) |
+| OK (válidas tal cual) | 1: `listarEspecialidades` |
 | Existe con otra forma → el frontend se adapta | 32: 21 de campos/args/inputs/enums/tipos + las 11 operaciones de S9, que ya existen pero cuyos documentos del frontend siguen usando `ID!`, inputs con otro nombre o campos distintos |
-| NO EXISTE en backend | 3 |
+| NO EXISTE en backend | 4 (incluye la consulta de reportes eliminada) |
 
 ### Operaciones que el backend NO ofrece
 
@@ -112,11 +114,11 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 
 | Uso en frontend | Contrato real | Estado | Qué cambia el frontend |
 | --- | --- | --- | --- |
-| `generarReporteInteligente(pregunta)` con `explicacionNatural consultaSqlEjecutada columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf` | idem; el backend además devuelve `reporteId`, `preguntaOriginal` (el frontend no los pide: OK). Solo ADMIN | OK | Pedir también `reporteId` si se quiere identificar el reporte. |
-| `TipoGrafico` `BARRAS/LINEAS/TORTA` | `tipoGraficoSugerido: String!`; hoy siempre `"TABLA"` | tipo distinto | No tratarlo como enum cerrado: valor por defecto `TABLA`. |
+| `generarReporteInteligente(pregunta)` | Eliminada; usar `ejecutarAgenteErp(instruccion)` y `reporteGenerado` | INCOMPATIBLE | Migrar a la mutación del agente; descargar las URLs nuevas con autenticación ADMIN del propietario. |
+| `TipoGrafico` `BARRAS/LINEAS/TORTA` | `tipoGraficoSugerido: String!`; sugerencia por forma de resultados: `BARRAS`, `LINEAS`, `TORTA` o `TABLA` | tipo distinto | No tratarlo como enum cerrado: valor por defecto `TABLA`. |
 | `consultaSqlEjecutada?`, `urlDescarga*?` opcionales | no nulos (`String!`) | OK | — |
 | `filasJson` | `String!` con un arreglo JSON de filas | OK | `JSON.parse`. |
-| Pregunta "pacientes con cuotas pendientes" | Las vistas de reportes no contienen datos de pacientes | semántica distinta | Para pacientes con cuotas, usar `listarOrdenesCobro`/`listarCuotasPendientesPorPaciente`. Si falta el proveedor de IA, la operación falla (no hay respuesta simulada). |
+| Pregunta "pacientes con cuotas pendientes" | Las vistas de reportes no contienen datos de pacientes | semántica distinta | Para pacientes con cuotas, usar `listarOrdenesCobro`/`listarCuotasPendientesPorPaciente`. Sin proveedor, `dev`/`local` usan un respaldo determinístico etiquetado; en producción falla explícitamente. El respaldo rechaza filtros que no puede representar en vez de descartarlos. |
 
 ## Edición y baja lógica (S9)
 
@@ -304,13 +306,17 @@ Variables:
 {"fechaInicio": "2026-10-01T00:00:00-04:00", "fechaFin": "2026-10-31T23:59:59-04:00"}
 ```
 
-### GenerarReporteInteligente
+### EjecutarAgenteErp
 
 ```graphql
-query GenerarReporteInteligente($pregunta: String!) {
-  generarReporteInteligente(pregunta: $pregunta) {
-    reporteId preguntaOriginal explicacionNatural consultaSqlEjecutada columnas filasJson
-    tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
+mutation EjecutarAgenteErp($instruccion: String!) {
+  ejecutarAgenteErp(instruccion: $instruccion) {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
+    notificacionN8nEnviada
+    reporteGenerado {
+      reporteId consultaSqlEjecutada columnas filasJson tipoGraficoSugerido
+      urlDescargaExcel urlDescargaPdf
+    }
   }
 }
 ```
@@ -318,7 +324,7 @@ query GenerarReporteInteligente($pregunta: String!) {
 Variables:
 
 ```json
-{"pregunta": "Ingresos por QR y efectivo de esta semana"}
+{"instruccion": "Genera un reporte de ingresos por método de pago"}
 ```
 
 ### CrearPaciente

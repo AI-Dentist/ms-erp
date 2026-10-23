@@ -20,8 +20,6 @@ type Query {
     obtenerOrdenCobroDetalle(id: UUID!): OrdenCobro
     listarCuotasPendientesPorPaciente(pacienteId: UUID!): [CuotaPago!]!
     obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!): ResumenFlujoCaja!
-
-    generarReporteInteligente(pregunta: String!): ReporteGenerativoResponse!
 }
 
 type Mutation {
@@ -224,18 +222,6 @@ type ResumenFlujoCaja {
     movimientos: [MovimientoCaja!]!
 }
 
-type ReporteGenerativoResponse {
-    reporteId: UUID!
-    preguntaOriginal: String!
-    explicacionNatural: String!
-    consultaSqlEjecutada: String!
-    columnas: [String!]!
-    filasJson: String!
-    tipoGraficoSugerido: String!
-    urlDescargaExcel: String!
-    urlDescargaPdf: String!
-}
-
 input EmpresaConfigInput {
     nombreComercial: String!
     razonSocial: String!
@@ -377,4 +363,47 @@ input RegistrarEgresoInput {
     metodoPago: MetodoPago!
     montoBs: BigDecimal!
     descripcion: String!
+}
+
+# ---- Co-Piloto & Monitor de Negocio ERP: single AI entry point (agent) and MCP server status ----
+extend type Query {
+    obtenerEstadoServidorMcp: McpServerStatus!
+    listarHistorialAgente(limite: Int = 20): [AgenteInteraccionResponse!]!
+}
+
+extend type Mutation {
+    ejecutarAgenteErp(instruccion: String!, modoAutonomoMonitoreo: Boolean = false): AgenteInteraccionResponse!
+}
+
+type McpServerStatus {
+    activo: Boolean!
+    protocolVersion: String!
+    toolsRegistradas: [McpToolMetadata!]!
+}
+
+type McpToolMetadata {
+    nombre: String!
+    categoria: String!
+    descripcion: String!
+}
+
+type AgenteInteraccionResponse {
+    interaccionId: UUID!
+    fechaEjecucion: DateTime!
+    instruccionOriginal: String!
+    respuestaNaturalAgente: String!
+    toolsMcpInvocadas: [String!]!
+    accionCrudEjecutada: String
+    notificacionN8nEnviada: Boolean!
+    reporteGenerado: ReporteGenerativoPayload
+}
+
+type ReporteGenerativoPayload {
+    reporteId: UUID!
+    consultaSqlEjecutada: String!
+    columnas: [String!]!
+    filasJson: String!
+    tipoGraficoSugerido: String!
+    urlDescargaExcel: String!
+    urlDescargaPdf: String!
 }

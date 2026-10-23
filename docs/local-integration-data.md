@@ -283,20 +283,25 @@ query FlujoCaja($fechaInicio: DateTime!, $fechaFin: DateTime!) {
 
 ```
 
-### generarReporteInteligente
+### ejecutarAgenteErp
 
 Variables:
 
 ```json
-{"pregunta":"Muéstrame los ingresos por QR y efectivo de esta semana y qué pacientes tienen cuotas pendientes"}
+{"instruccion":"Genera un reporte de ingresos por método de pago"}
 ```
 
 Operación:
 
 ```graphql
-query GenerarReporte($pregunta: String!) {
-  generarReporteInteligente(pregunta: $pregunta) {
-    reporteId explicacionNatural columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
+mutation EjecutarAgenteErp($instruccion: String!) {
+  ejecutarAgenteErp(instruccion: $instruccion) {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
+    notificacionN8nEnviada
+    reporteGenerado {
+      reporteId consultaSqlEjecutada columnas filasJson tipoGraficoSugerido
+      urlDescargaExcel urlDescargaPdf
+    }
   }
 }
 ```
@@ -485,4 +490,42 @@ Operación:
 mutation ActualizarUsuario($id: UUID!, $input: ActualizarUsuarioInput!) {
   actualizarUsuario(id: $id, input: $input) { id username email nombreCompleto activo rol { codigo } }
 }
+```
+
+## Agente y MCP
+
+Los siguientes ejemplos completan `operations.graphql`. El CRUD crea un servicio real: use un código nuevo en cada prueba. Sin API key en `local`, las respuestas indican respaldo determinístico, no IA. Para exportar use las URLs de `reporteGenerado` con la autenticación ADMIN del propietario. El monitoreo autónomo nunca modifica órdenes ni caja; con n8n habilitado puede notificar cuotas vencidas.
+
+```graphql
+
+#@ obtenerEstadoServidorMcp
+#@vars {}
+query EstadoMcp {
+  obtenerEstadoServidorMcp { activo protocolVersion toolsRegistradas { nombre categoria descripcion } }
+}
+
+#@ listarHistorialAgente
+#@vars {}
+query HistorialAgente {
+  listarHistorialAgente(limite: 20) {
+    interaccionId fechaEjecucion instruccionOriginal respuestaNaturalAgente toolsMcpInvocadas
+  }
+}
+
+#@ monitoreoAutonomo
+#@vars {}
+mutation MonitoreoAutonomo {
+  ejecutarAgenteErp(instruccion: "Monitorea mi negocio", modoAutonomoMonitoreo: true) {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada notificacionN8nEnviada
+  }
+}
+
+#@ crearServicioPorAgente
+#@vars {}
+mutation CrearServicioPorAgente {
+  ejecutarAgenteErp(instruccion: "Crear servicio codigo=AGT-DEMO nombre=\"Limpieza demo\" precio=150") {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
+  }
+}
+
 ```

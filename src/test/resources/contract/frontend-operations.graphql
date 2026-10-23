@@ -81,7 +81,7 @@ query ListarMovimientosCaja($fechaDesde: String!, $fechaHasta: String!) {
   }
 }
 
-#@ GenerarReporteInteligente expect=VALID
+#@ GenerarReporteInteligente expect=INVALID
 query GenerarReporteInteligente($pregunta: String!) {
   generarReporteInteligente(pregunta: $pregunta) {
     explicacionNatural consultaSqlEjecutada columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf

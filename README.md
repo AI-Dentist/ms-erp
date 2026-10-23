@@ -51,43 +51,53 @@ docker compose up -d
 - CORS: solo el origen `http://localhost:4201` (lista `erp.cors.allowed-origins`, vacía fuera de `local`, nunca `*`), métodos GET/POST/OPTIONS, cabeceras `Authorization, Content-Type, Accept, Idempotency-Key, X-Dev-User`; expone `Idempotency-Replayed` y `Content-Disposition`.
 - Seguridad: la aplicación **no arranca** si `erp.security.local-dev-user.enabled=true` se combina con un perfil distinto de `local`, con `erp.security.dev-mode=true` o si `local` convive con `prod`/`production`. En la cadena por defecto `X-Dev-User` se ignora por completo.
 
-## Reportes dinámicos y exportación
+## Co-Piloto ERP, MCP y reportes
 
-1. Tras aplicar V5, aprovisione un **nuevo login no propietario, exclusivo de lectura**, siguiendo [scripts/reporting-role.sql](scripts/reporting-role.sql). En una sesión administrativa `psql` protegida, suministre `report_user`, `report_password` y `app_user`, y ejecute explícitamente `\i scripts/reporting-role.sql`. Nunca se ejecuta automáticamente ni modifica contraseñas existentes.
-2. Configure las credenciales `ERP_REPORT_DB_*`. El usuario debe ser distinto al principal y solo tener SELECT sobre las tres vistas aprobadas. Las URLs JDBC no pueden contener parámetros `user`/`password`. Sin credenciales seguras fallan los reportes, no el servicio completo.
-3. Configure el proveedor Spring AI existente: OpenAI por defecto; endpoint/modelo configurables sin imponer alojamiento local o externo. Sin clave, GraphQL devuelve `Reportes IA no disponibles: configure el proveedor`; no hay respuestas ficticias.
+El único punto de entrada de IA es `ejecutarAgenteErp`. El agente usa las mismas nueve herramientas que el servidor MCP autenticado en `/mcp` (Streamable HTTP). Cada herramienta aplica los roles del ERP con la identidad del solicitante; el modelo nunca obtiene permisos adicionales.
 
-La pregunta original (1–500 caracteres) se envía como mensaje de usuario no confiable junto al esquema permitido. **No incluya datos personales en preguntas.** La aplicación no adjunta filas, historiales ni registros de pacientes, y no registra preguntas ni payloads del proveedor. No habilite trazas de payloads/prompts en infraestructura externa.
+| Capacidad | Herramientas |
+|---|---|
+| Monitoreo | Resumen financiero, cuotas vencidas y flujo de caja |
+| CRUD por casos de uso | Crear servicio, registrar egreso, reprogramar plan/anular descuento, anular orden pendiente |
+| Reportes ADMIN | SELECT protegido, caché privada y descargas PDF/XLSX |
+| Cobranza ADMIN/CAJERO | Recordatorios n8n, máximo 20 por llamada, deduplicación de cuota durante 24 h |
 
-Ejemplo ADMIN, mediante `POST /graphql`:
+Sin `OPENAI_API_KEY`, únicamente `dev` y `local` usan reglas determinísticas: cada respuesta lleva **[Respaldo determinístico — sin IA]**. No se ejecuta ningún modelo local en el backend. Producción sin clave falla explícitamente. Gemini puede usar su API compatible con OpenAI: configure `SPRING_AI_OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`, `OPENAI_API_KEY` y `ERP_AI_MODEL` con un modelo habilitado en su cuenta; no guarde claves en archivos versionados.
+
+### Ruta rápida sin proveedor IA
 
 ```graphql
-query {
-  generarReporteInteligente(
-    pregunta: "Total de ingresos entre 2026-10-01 y 2026-10-31, categoría COBRO_CUOTA"
-  ) {
-    reporteId preguntaOriginal explicacionNatural consultaSqlEjecutada
-    columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
+mutation {
+  ejecutarAgenteErp(instruccion: "Genera un reporte de precios de servicios") {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
+    notificacionN8nEnviada
+    reporteGenerado {
+      reporteId consultaSqlEjecutada columnas filasJson tipoGraficoSugerido
+      urlDescargaExcel urlDescargaPdf
+    }
   }
 }
 ```
 
-El modelo debe conservar fechas, categorías y métricas, por ejemplo:
+Otros ejemplos de respaldo: `resumen financiero`, `cuotas vencidas`, `flujo de caja`, `crear servicio codigo=LIM-TEST nombre="Limpieza" precio=150`, `registrar egreso monto=80 categoria=INSUMOS descripcion="Guantes"`, `anular orden <uuid> motivo="Error"`, `reprogramar <uuid> cuotas=3 primera=2026-12-01 intervalo=30` y `anular descuento <uuid>`. Son reglas acotadas: una instrucción no reconocida devuelve ayuda, no datos inventados. Una instrucción de escritura con negación se rechaza sin ejecutar herramientas. Los valores explícitos inválidos no se sustituyen por defaults; la descripción indicada al crear un servicio se conserva.
 
-```sql
-SELECT SUM(amount_bs) FROM report_income WHERE day >= '2026-10-01' AND day <= '2026-10-31' AND category = 'COBRO_CUOTA'
-```
+`modoAutonomoMonitoreo: true` consulta resumen y morosidad; puede enviar recordatorios si n8n está habilitado, pero **nunca ejecuta CRUD**. `PromptInjectionGuardrail` bloquea instrucciones maliciosas antes del procesamiento; es defensa adicional, no reemplaza autorización. `listarHistorialAgente(limite: 20)` admite 1–100: ADMIN ve todas las interacciones; los demás, solo las propias. El historial almacena instrucciones/respuestas: no incluya secretos ni datos personales innecesarios.
 
-El guard no confía en el prompt: solo permite un SELECT sobre `report_income`, `report_orders` o `report_services`, columnas aprobadas, agregados SUM/COUNT/AVG/MIN/MAX y filtros simples AND, GROUP BY, ORDER BY y LIMIT 1–500. No admite joins, CTE, subconsultas, funciones arbitrarias, comentarios, punto y coma ni modificaciones. SQL no soportado o respuesta `UNSUPPORTED` produce `Consulta de reporte no permitida`; nunca se reescribe para quitar restricciones. Las columnas y gramática detalladas están en el script de aprovisionamiento. Revise `consultaSqlEjecutada`: la interpretación de lenguaje natural depende del modelo; el guard valida seguridad, no equivalencia semántica.
+### Reportes y descargas
 
-La ejecución usa pool separado (2 conexiones), transacciones read-only, rollback, timeout de consulta de 3 s y máximo de 500 filas. El resultado queda en memoria: 64 reportes totales, TTL absoluto de 10 minutos, accesibles únicamente por su principal propietario ADMIN.
+1. Tras V5, aprovisione un login nuevo, no propietario y exclusivo SELECT con [scripts/reporting-role.sql](scripts/reporting-role.sql). No modifica credenciales existentes automáticamente.
+2. Configure `ERP_REPORT_DB_USER/PASSWORD` (y opcionalmente `ERP_REPORT_DB_URL`). Sin conexión segura, falla el reporte, no el resto del ERP.
+3. Pida el reporte al agente o a `generarReporteDinamicoSqlTool`. En respaldo usa plantillas fijas; con proveedor usa Spring AI y el mismo guardrail.
 
-Descargue usando las URLs devueltas, sin ejecutar otra consulta:
+`SqlReadOnlyGuardrail` solo permite SELECT sobre `report_income`, `report_orders` o `report_services`, columnas aprobadas, agregados y filtros simples. Rechaza DML/DDL, comentarios, múltiples sentencias, joins, CTE y funciones arbitrarias. PostgreSQL también impone solo lectura en la conexión dedicada: pool de 2, timeout 3 s, máximo 500 filas. El gráfico es una sugerencia determinística según las columnas/tipos (BARRAS, LINEAS, TORTA o TABLA), no razonamiento del modelo. El respaldo admite filtros de método de pago (`solo QR_PAGOFACIL`, `solo EFECTIVO` o `solo TRANSFERENCIA`); fechas, categorías u otras restricciones no soportadas se rechazan explícitamente, nunca se descartan. Un reporte diario sin fechas usa los últimos 90 días.
 
-- `GET /api/v1/reports/export/<UUID>/xlsx`
-- `GET /api/v1/reports/export/<UUID>/pdf`
+La caché conserva hasta 64 reportes durante 10 minutos, solo para su propietario ADMIN. Descargue las URLs devueltas sin volver a consultar:
+- `GET /api/v1/reports/export/{reporteId}/xlsx`
+- `GET /api/v1/reports/export/{reporteId}/pdf`
 
-Los adjuntos usan MIME correspondiente, `Cache-Control: no-store` y `X-Content-Type-Options: nosniff`. Formato inválido: 400; ID ausente/inválido/desconocido, expirado o de otro propietario: 404 `Reporte no disponible`; rol insuficiente: 403. XLSX conserva importes numéricos y texto como celdas de texto, nunca fórmulas. No se guardan archivos.
+Los archivos reales incluyen membrete de la clínica, fecha y Bs. XLSX conserva importes numéricos y texto sin fórmulas. MIME correcto, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`; formato inválido 400, reporte desconocido/expirado/otro propietario 404, rol insuficiente 403.
+
+**Cambio incompatible:** se eliminan `generarReporteInteligente` y `/export/{format}?reporteId=...`. El frontend debe usar la mutación del agente, su `reporteGenerado` y las nuevas URLs. Las demás operaciones GraphQL se conservan.
 
 ## QR: protocolo LOCAL, no PagoFácil real
 
@@ -115,9 +125,9 @@ Se mantiene el contrato existente: una respuesta fallida (incluidos errores Grap
 
 - **PDF privados:** el modo local explícito guarda `file:` bajo el directorio temporal del sistema (no es una URL web). Para S3 configure `ERP_RECEIPTS_MODE=s3`: en local SeaweedFS con claves estáticas; en AWS `ERP_RECEIPTS_MINIO_PROVIDER=aws`, región obligatoria y rol IAM (sin claves estáticas), según [docs/s3-receipts.md](docs/s3-receipts.md). MinIO server ya no se distribuye como imagen pública. GraphQL entrega enlaces presignados solo a ADMIN/CAJERO; no se añade REST. Un fallo de PDF/storage no revierte el pago y no tiene recuperación durable automática: no repita el cobro para reparar un PDF.
 - **Catálogos:** V6 registra los eventos en el outbox junto al agregado/auditoría. El dispatcher exige confirmación ACK sin retorno obligatorio y reintenta con backoff conservando `eventId`. Entrega al menos una vez, no exactamente una vez: consumidores deben deduplicar. Configuración y operación: [docs/catalog-outbox.md](docs/catalog-outbox.md).
-- **n8n optativo:** `N8N_ENABLED=false` no realiza HTTP. Para activarlo configure `N8N_WEBHOOK_URL` en un destino de confianza. Envía solo evento, UUID y número de recibo, después del commit; no datos del paciente. Los timeouts `erp.n8n.connect-timeout-ms`/`read-timeout-ms` son 1000/2000 ms por defecto (acotados a 100–5000 ms). Un error/timeout se registra sin revertir cuota, saldo, movimiento ni recibo; no hay reintento durable. No habilite trazas de payloads.
+- **n8n optativo:** `N8N_ENABLED=false` no realiza HTTP. Para activarlo configure `N8N_WEBHOOK_URL` en un destino de confianza. Los avisos de recibos envían evento, UUID y número después del commit. La herramienta de cobranza además envía nombre/teléfono y datos de cuota/QR al destino configurado: úselo solo con un webhook de confianza y autorización para tratar esos datos. Los timeouts `erp.n8n.connect-timeout-ms`/`read-timeout-ms` son 1000/2000 ms por defecto (acotados a 100–5000 ms). Un error/timeout se registra sin revertir cuota, saldo, movimiento ni recibo; no hay reintento durable. No habilite trazas de payloads.
 
-Se mantienen GraphQL y las dos únicas rutas REST de negocio: callback local PagoFácil y exportación de reportes.
+Se mantienen GraphQL y las dos rutas REST de negocio (callback y exportación); `/mcp` es una excepción de protocolo autenticada.
 
 ## Verificación y límites de la evidencia
 
