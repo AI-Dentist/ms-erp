@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "erp-dev",
+      "credentials": [{ "accessKey": "erp_dev_access", "secretKey": "erp_dev_secret_local_only" }],
+      "actions": ["Admin", "Read", "Write", "List"]
+    }
+  ]
+}

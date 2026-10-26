@@ -1,0 +1,58 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.iml
+.idea/
+.vscode/
+*.log
+.env
+HELP.md
+
+# Local environment files (only deliberately sanitized examples may be shared)
+.env*
+*.env
+*.env.*
+!.env.example
+!.env.*.example
+!*.env.example
+
+# Agent/tool state and frontend caches
+.atl/
+.pi/
+.codegraph/
+node_modules/
+.npm/
+.cache/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.sublime-workspace
+.classpath
+.project
+.settings/
+
+# Private keys, certificates and keystores
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+
+# Database exports/backups (migration SQL remains versioned)
+*.dump
+*.sql.gz
+*.sql.zip
+*.backup
+*.bak
+/dumps/
+/backups/
+
+# Generated private documents and local storage
+/receipts/
+/reports/
+/generated-receipts/
+/generated-reports/
+/data/

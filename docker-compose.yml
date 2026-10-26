@@ -1,0 +1,105 @@
+name: dental-erp-ms1
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: erp-postgres
+    environment:
+      POSTGRES_DB: dental_erp
+      POSTGRES_USER: erp_user
+      POSTGRES_PASSWORD: erp_password
+      TZ: America/La_Paz
+    ports:
+      # Override the host port when 5432 is already taken by a local PostgreSQL install (e.g. ERP_DB_HOST_PORT=55432)
+      - "${ERP_DB_HOST_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 images keep PGDATA under a versioned subdirectory of /var/lib/postgresql
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_user -d dental_erp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: erp-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: erp_user
+      RABBITMQ_DEFAULT_PASS: erp_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Local S3 emulator (MinIO no longer publishes public images). DEV ONLY: fixed credentials from
+  # docker/seaweedfs/s3.json, bound to loopback. Anonymous access is denied because identities are configured.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
+    container_name: erp-seaweedfs
+    command: server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - seaweedfs-data:/data
+      - ./docker/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # One-shot, idempotent: creates the private receipts bucket if missing, then exits.
+  seaweedfs-init:
+    image: chrislusf/seaweedfs:4.48
+    container_name: erp-seaweedfs-init
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo s3.bucket.list | weed shell -master=seaweedfs:9333 | grep -qw erp-receipts \
+          || echo s3.bucket.create -name erp-receipts | weed shell -master=seaweedfs:9333
+
+  # Local identity provider for Bearer JWT integration tests. DEV ONLY: start-dev (H2, plain HTTP), fixed realm import
+  # from docker/keycloak/dental-platform-realm.json (synthetic users, dev passwords), bound to loopback.
+  # Admin console credentials below are LOCAL-ONLY defaults, override with KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    container_name: erp-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin-local-only}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./docker/keycloak/dental-platform-realm.json:/opt/keycloak/data/import/dental-platform-realm.json:ro
+    healthcheck:
+      # The image has no curl: plain bash TCP request. Healthy only once the imported realm answers discovery.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /realms/dental-platform/.well-known/openid-configuration HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"issuer"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  seaweedfs-data:

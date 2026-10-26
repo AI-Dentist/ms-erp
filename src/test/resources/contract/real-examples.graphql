@@ -1,0 +1,266 @@
+# Valid operations of the REAL contract (src/main/resources/graphql/schema.graphqls), referenced from
+# docs/frontend-contract-diff.md. FrontendExamplesValidationTest validates the document AND coerces the variables
+# against the served schema, and checks that the doc contains each block verbatim.
+# Block format: "#@ <name>", optional "#@vars <single-line JSON>", then the GraphQL document.
+# UUIDs are placeholders: take real ones from the seed (T2) or from a previous response.
+
+#@ ListarPacientes
+query ListarPacientes($busqueda: String) {
+  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion }
+}
+#@vars {"busqueda": "Rojas"}
+
+#@ ObtenerPacientePorId
+query ObtenerPacientePorId($id: UUID!) {
+  obtenerPacientePorId(id: $id) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion activo }
+}
+#@vars {"id": "33333333-3333-4333-8333-333333333333"}
+
+#@ ListarOdontologos
+query ListarOdontologos($soloActivos: Boolean) {
+  listarOdontologos(soloActivos: $soloActivos) {
+    id ci matriculaProfesional nombres apellidos telefono email porcentajeComision especialidades { id codigo nombre }
+  }
+}
+#@vars {"soloActivos": true}
+
+#@ ListarEspecialidades
+query ListarEspecialidades {
+  listarEspecialidades { id codigo nombre descripcion }
+}
+
+#@ ListarConsultorios
+query ListarConsultorios {
+  listarConsultorios { id codigo nombre ubicacion estado }
+}
+
+#@ ListarServiciosOdontologicos
+query ListarServiciosOdontologicos($especialidadId: UUID) {
+  listarServiciosOdontologicos(especialidadId: $especialidadId) {
+    id codigo nombre descripcion precioBaseBs especialidad { id nombre }
+  }
+}
+#@vars {"especialidadId": null}
+
+#@ ObtenerConfiguracionEmpresa
+query ObtenerConfiguracionEmpresa {
+  obtenerConfiguracionEmpresa { id nombreComercial razonSocial nit direccion telefonoContacto emailContacto monedaSimbolo }
+}
+
+#@ ListarUsuarios
+query ListarUsuarios {
+  listarUsuarios { id username email nombreCompleto activo rol { codigo nombre } }
+}
+
+#@ ListarAuditLogs
+query ListarAuditLogs($limite: Int) {
+  listarAuditLogs(limite: $limite) { id accion entidadAfectada entidadId detalleJson createdAt }
+}
+#@vars {"limite": 50}
+
+#@ ListarOrdenesCobro
+query ListarOrdenesCobro($estado: EstadoOrdenCobro, $pacienteId: UUID) {
+  listarOrdenesCobro(estado: $estado, pacienteId: $pacienteId) {
+    id modalidadPago montoSubtotalBs descuentoBs montoTotalBs saldoPendienteBs cantidadCuotas estado createdAt
+    paciente { id ciNit nombres apellidos }
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado fechaPago }
+  }
+}
+#@vars {"estado": "PENDIENTE", "pacienteId": null}
+
+#@ ObtenerOrdenCobroDetalle
+query ObtenerOrdenCobroDetalle($id: UUID!) {
+  obtenerOrdenCobroDetalle(id: $id) {
+    id modalidadPago montoTotalBs saldoPendienteBs estado createdAt
+    paciente { id ciNit nombres apellidos }
+    items { id piezaDental cantidad precioUnitarioBs subtotalBs servicio { id codigo nombre } }
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado fechaPago }
+  }
+}
+#@vars {"id": "11111111-1111-4111-8111-111111111111"}
+
+#@ ObtenerFlujoCaja
+query ObtenerFlujoCaja($fechaInicio: DateTime!, $fechaFin: DateTime!) {
+  obtenerFlujoCaja(fechaInicio: $fechaInicio, fechaFin: $fechaFin) {
+    totalIngresosBs totalEgresosBs saldoNetoBs
+    movimientos {
+      id tipoMovimiento categoria metodoPago montoBs descripcion fechaMovimiento
+      recibo { id numeroRecibo }
+    }
+  }
+}
+#@vars {"fechaInicio": "2026-10-01T00:00:00-04:00", "fechaFin": "2026-10-31T23:59:59-04:00"}
+
+#@ EjecutarAgenteErp
+mutation EjecutarAgenteErp($instruccion: String!) {
+  ejecutarAgenteErp(instruccion: $instruccion) {
+    interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
+    notificacionN8nEnviada
+    reporteGenerado {
+      reporteId consultaSqlEjecutada columnas filasJson tipoGraficoSugerido
+      urlDescargaExcel urlDescargaPdf
+    }
+  }
+}
+#@vars {"instruccion": "Genera un reporte de ingresos por método de pago"}
+
+#@ CrearPaciente
+mutation CrearPaciente($input: CrearPacienteInput!) {
+  crearPaciente(input: $input) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion }
+}
+#@vars {"input": {"ciNit": "9876543", "nombres": "Lucia", "apellidos": "Rojas Mamani", "fechaNacimiento": "1990-05-17", "genero": "F", "telefonoWhatsapp": "+59171234567", "email": "lucia@example.bo", "direccion": "Av. Banzer 100"}}
+
+#@ CrearEspecialidad
+mutation CrearEspecialidad($codigo: String!, $nombre: String!, $descripcion: String) {
+  crearEspecialidad(codigo: $codigo, nombre: $nombre, descripcion: $descripcion) { id codigo nombre descripcion }
+}
+#@vars {"codigo": "ENDO", "nombre": "Endodoncia", "descripcion": "Tratamiento de conductos"}
+
+#@ CrearOdontologo
+mutation CrearOdontologo($input: CrearOdontologoInput!) {
+  crearOdontologo(input: $input) { id ci matriculaProfesional nombres apellidos especialidades { id nombre } }
+}
+#@vars {"input": {"ci": "5551234", "matriculaProfesional": "MP-1234", "nombres": "Carlos", "apellidos": "Vaca Justiniano", "telefono": "+59170011223", "email": null, "porcentajeComision": 30.00, "especialidadesIds": ["22222222-2222-4222-8222-222222222222"]}}
+
+#@ CrearConsultorio
+mutation CrearConsultorio($input: CrearConsultorioInput!) {
+  crearConsultorio(input: $input) { id codigo nombre ubicacion estado }
+}
+#@vars {"input": {"codigo": "CONS-05", "nombre": "Consultorio 5", "ubicacion": "Piso 2"}}
+
+#@ CrearServicioOdontologico
+mutation CrearServicioOdontologico($input: CrearServicioInput!) {
+  crearServicioOdontologico(input: $input) { id codigo nombre descripcion precioBaseBs especialidad { id nombre } }
+}
+#@vars {"input": {"especialidadId": null, "codigo": "LIMP-01", "nombre": "Limpieza dental", "descripcion": "Profilaxis", "precioBaseBs": 150.50}}
+
+#@ ActualizarConfiguracionEmpresa
+mutation ActualizarConfiguracionEmpresa($input: EmpresaConfigInput!) {
+  actualizarConfiguracionEmpresa(input: $input) { id nombreComercial razonSocial nit direccion telefonoContacto emailContacto }
+}
+#@vars {"input": {"nombreComercial": "Sonrisa Dental", "razonSocial": "Sonrisa S.R.L.", "nit": "1023456029", "direccion": "Av. San Martin 155, Santa Cruz de la Sierra", "telefonoContacto": "+591 3 3412233", "emailContacto": "info@sonrisa.bo"}}
+
+#@ CrearUsuario
+mutation CrearUsuario($input: CrearUsuarioInput!) {
+  crearUsuario(input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
+#@vars {"input": {"rolCodigo": "CAJERO", "username": "cajero2", "email": "cajero2@sonrisa.bo", "nombreCompleto": "Cajero Dos", "password": "Secreta2026!"}}
+
+#@ CrearOrdenCobroManual
+mutation CrearOrdenCobroManual($input: CrearOrdenCobroInput!) {
+  crearOrdenCobroManual(input: $input) { id estado montoSubtotalBs descuentoBs montoTotalBs saldoPendienteBs items { servicio { id nombre } cantidad subtotalBs } }
+}
+#@vars {"input": {"pacienteId": "33333333-3333-4333-8333-333333333333", "odontologoId": null, "items": [{"servicioId": "44444444-4444-4444-8444-444444444444", "piezaDental": "18", "cantidad": 1}], "descuentoBs": 0, "observaciones": "Orden manual"}}
+
+#@ ConfigurarPlanDePagos
+mutation ConfigurarPlanDePagos($input: ConfigurarPlanPagosInput!) {
+  configurarPlanDePagos(input: $input) {
+    id modalidadPago estado montoTotalBs cantidadCuotas
+    cuotas { id numeroCuota montoCuotaBs fechaVencimiento estado }
+  }
+}
+#@vars {"input": {"ordenCobroId": "11111111-1111-4111-8111-111111111111", "modalidadPago": "CREDITO", "descuentoBs": 10.00, "cantidadCuotas": 3, "fechaPrimeraCuota": "2026-11-15", "intervaloDias": 30}}
+
+#@ CobrarCuotaEnEfectivo
+mutation CobrarCuotaEnEfectivo($input: CobrarEfectivoInput!) {
+  cobrarCuotaEnEfectivo(input: $input) { id numeroRecibo ciNitCliente razonSocialCliente concepto montoTotalBs pdfUrlS3 fechaEmision }
+}
+#@vars {"input": {"cuotaId": "55555555-5555-4555-8555-555555555555", "usuarioCajeroId": "66666666-6666-4666-8666-666666666666", "ciNitCliente": "9876543", "razonSocialCliente": "Rojas Mamani"}}
+
+#@ GenerarQrPagoFacil
+mutation GenerarQrPagoFacil($cuotaId: UUID!, $ciNitCliente: String!, $razonSocialCliente: String!) {
+  generarQrPagoFacil(cuotaId: $cuotaId, ciNitCliente: $ciNitCliente, razonSocialCliente: $razonSocialCliente) {
+    id cuotaId pagofacilTransactionId qrImagenBase64 montoBs estado fechaExpiracion
+  }
+}
+#@vars {"cuotaId": "55555555-5555-4555-8555-555555555555", "ciNitCliente": "9876543", "razonSocialCliente": "Rojas Mamani"}
+
+#@ SimularConfirmacionQrDev
+mutation SimularConfirmacionQrDev($pagofacilTransactionId: String!) {
+  simularConfirmacionQrDev(pagofacilTransactionId: $pagofacilTransactionId) {
+    id numeroRecibo montoTotalBs pdfUrlS3 fechaEmision
+  }
+}
+#@vars {"pagofacilTransactionId": "PF-MOCK-0001"}
+
+#@ RegistrarEgresoCaja
+mutation RegistrarEgresoCaja($input: RegistrarEgresoInput!) {
+  registrarEgresoCaja(input: $input) { id tipoMovimiento categoria metodoPago montoBs descripcion fechaMovimiento }
+}
+#@vars {"input": {"usuarioCajeroId": "66666666-6666-4666-8666-666666666666", "categoria": "INSUMOS", "metodoPago": "EFECTIVO", "montoBs": 85.50, "descripcion": "Compra de guantes"}}
+
+#@ ListarCuotasPendientesPorPaciente
+query ListarCuotasPendientesPorPaciente($pacienteId: UUID!) {
+  listarCuotasPendientesPorPaciente(pacienteId: $pacienteId) { id numeroCuota montoCuotaBs fechaVencimiento estado }
+}
+#@vars {"pacienteId": "33333333-3333-4333-8333-333333333333"}
+
+#@ ActualizarPaciente
+mutation ActualizarPaciente($id: UUID!, $input: ActualizarPacienteInput!) {
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion activo }
+}
+#@vars {"id": "33333333-3333-4333-8333-333333333333", "input": {"ciNit": "9876543", "nombres": "Ana María", "apellidos": "Rojas Mamani", "fechaNacimiento": "1990-01-31", "genero": "FEMENINO", "telefonoWhatsapp": "+59171111111", "email": null, "direccion": "Calle 5 #10"}}
+
+#@ EliminarPaciente
+mutation EliminarPaciente($id: UUID!) {
+  eliminarPaciente(id: $id)
+}
+#@vars {"id": "33333333-3333-4333-8333-333333333333"}
+
+#@ ActualizarOdontologo
+mutation ActualizarOdontologo($id: UUID!, $input: ActualizarOdontologoInput!) {
+  actualizarOdontologo(id: $id, input: $input) {
+    id ci matriculaProfesional nombres apellidos telefono email porcentajeComision activo especialidades { id nombre }
+  }
+}
+#@vars {"id": "77777777-7777-4777-8777-777777777777", "input": {"ci": "5551234", "matriculaProfesional": "MP-1234", "nombres": "Carlos", "apellidos": "Vaca Justiniano", "telefono": "+59170011223", "email": null, "porcentajeComision": 32.50, "especialidadesIds": ["22222222-2222-4222-8222-222222222222"]}}
+
+#@ EliminarOdontologo
+mutation EliminarOdontologo($id: UUID!) {
+  eliminarOdontologo(id: $id)
+}
+#@vars {"id": "77777777-7777-4777-8777-777777777777"}
+
+#@ ActualizarEspecialidad
+mutation ActualizarEspecialidad($id: UUID!, $input: ActualizarEspecialidadInput!) {
+  actualizarEspecialidad(id: $id, input: $input) { id codigo nombre descripcion activo }
+}
+#@vars {"id": "22222222-2222-4222-8222-222222222222", "input": {"codigo": "PERIO", "nombre": "Periodoncia", "descripcion": "Salud de las encías"}}
+
+#@ EliminarEspecialidad
+mutation EliminarEspecialidad($id: UUID!) {
+  eliminarEspecialidad(id: $id)
+}
+#@vars {"id": "22222222-2222-4222-8222-222222222222"}
+
+#@ ActualizarConsultorio
+mutation ActualizarConsultorio($id: UUID!, $input: ActualizarConsultorioInput!) {
+  actualizarConsultorio(id: $id, input: $input) { id codigo nombre ubicacion estado }
+}
+#@vars {"id": "88888888-8888-4888-8888-888888888888", "input": {"codigo": "CONS-05", "nombre": "Consultorio 5", "ubicacion": "Piso 2", "estado": "MANTENIMIENTO"}}
+
+#@ EliminarConsultorio
+mutation EliminarConsultorio($id: UUID!) {
+  eliminarConsultorio(id: $id)
+}
+#@vars {"id": "88888888-8888-4888-8888-888888888888"}
+
+#@ ActualizarServicioOdontologico
+mutation ActualizarServicioOdontologico($id: UUID!, $input: ActualizarServicioInput!) {
+  actualizarServicioOdontologico(id: $id, input: $input) {
+    id codigo nombre descripcion precioBaseBs activo especialidad { id nombre }
+  }
+}
+#@vars {"id": "44444444-4444-4444-8444-444444444444", "input": {"especialidadId": null, "codigo": "LIMP-01", "nombre": "Limpieza dental", "descripcion": "Profilaxis", "precioBaseBs": 175.00}}
+
+#@ EliminarServicioOdontologico
+mutation EliminarServicioOdontologico($id: UUID!) {
+  eliminarServicioOdontologico(id: $id)
+}
+#@vars {"id": "44444444-4444-4444-8444-444444444444"}
+
+#@ ActualizarUsuario
+mutation ActualizarUsuario($id: UUID!, $input: ActualizarUsuarioInput!) {
+  actualizarUsuario(id: $id, input: $input) { id username email nombreCompleto activo rol { codigo } }
+}
+#@vars {"id": "66666666-6666-4666-8666-666666666666", "input": {"rolCodigo": "RECEPCIONISTA", "activo": true, "nombreCompleto": "Cajero Dos", "email": null}}

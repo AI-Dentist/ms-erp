@@ -1,0 +1,212 @@
+# SNAPSHOT of the GraphQL operations consumed by the Angular microfrontend mf-erp.
+# Sources (read-only, copied verbatim, with the TypeScript ${...} field constants expanded inline):
+#   apps/mf-erp/src/app/core/graphql/queries.graphql.ts
+#   apps/mf-erp/src/app/core/graphql/mutations.graphql.ts
+#   apps/mf-erp/src/app/features/catalogs/catalogs.graphql.ts
+# It is NOT regenerated automatically: if the frontend changes, update this file and docs/frontend-contract-diff.md.
+# Each block starts with "#@ <name> expect=VALID|INVALID" (expectation = what docs/frontend-contract-diff.md states
+# against the real schema). FrontendExamplesValidationTest validates every block and reports the errors.
+
+#@ ListarPacientes expect=VALID
+query ListarPacientes($busqueda: String) {
+  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos telefonoWhatsapp email fechaNacimiento }
+}
+
+#@ ListarOdontologos expect=INVALID
+query ListarOdontologos {
+  listarOdontologos { id nombres apellidos matricula telefono activo especialidad { id nombre } }
+}
+
+#@ ListarEspecialidades expect=VALID
+query ListarEspecialidades {
+  listarEspecialidades { id nombre descripcion }
+}
+
+#@ ListarConsultorios expect=INVALID
+query ListarConsultorios {
+  listarConsultorios { id nombre ubicacion activo }
+}
+
+#@ ListarServiciosOdontologicos expect=INVALID
+query ListarServiciosOdontologicos {
+  listarServiciosOdontologicos { id codigo nombre descripcion precioBs activo }
+}
+
+#@ ObtenerConfiguracionEmpresa expect=INVALID
+query ObtenerConfiguracionEmpresa {
+  obtenerConfiguracionEmpresa { nit razonSocial direccion telefono email ciudad }
+}
+
+#@ ListarUsuarios expect=INVALID
+query ListarUsuarios {
+  listarUsuarios { id username nombreCompleto rol activo }
+}
+
+#@ ListarLogsAuditoria expect=INVALID
+query ListarLogsAuditoria($limite: Int) {
+  listarLogsAuditoria(limite: $limite) { id fecha usuario accion entidad detalle }
+}
+
+#@ ListarOrdenesCobro expect=INVALID
+query ListarOrdenesCobro($estado: EstadoOrdenCobro) {
+  listarOrdenesCobro(estado: $estado) { id codigo origen concepto montoTotal descuento montoNeto estado tipoPago fechaCreacion
+  paciente { id ciNit nombres apellidos }
+  cuotas { id numero monto fechaVencimiento estado } }
+}
+
+#@ ObtenerOrdenCobro expect=INVALID
+query ObtenerOrdenCobro($id: ID!) {
+  obtenerOrdenCobro(id: $id) { id codigo origen concepto montoTotal descuento montoNeto estado tipoPago fechaCreacion
+  paciente { id ciNit nombres apellidos }
+  cuotas { id numero monto fechaVencimiento estado } }
+}
+
+#@ ConsultarEstadoQrPagoFacil expect=INVALID
+query ConsultarEstadoQrPagoFacil($pagofacilTransactionId: String!) {
+  consultarEstadoQrPagoFacil(pagofacilTransactionId: $pagofacilTransactionId) {
+    pagofacilTransactionId qrImagenBase64 monto fechaExpiracion estado
+    recibo { id numeroRecibo fechaEmision monto metodoPago ciNit razonSocial concepto urlDescargaPdf }
+  }
+}
+
+#@ ObtenerResumenCaja expect=INVALID
+query ObtenerResumenCaja($fechaDesde: String!, $fechaHasta: String!) {
+  obtenerResumenCaja(fechaDesde: $fechaDesde, fechaHasta: $fechaHasta) { totalIngresos totalEgresos saldoNeto }
+}
+
+#@ ListarMovimientosCaja expect=INVALID
+query ListarMovimientosCaja($fechaDesde: String!, $fechaHasta: String!) {
+  listarMovimientosCaja(fechaDesde: $fechaDesde, fechaHasta: $fechaHasta) {
+    id fecha tipo categoria concepto metodoPago monto reciboId
+  }
+}
+
+#@ GenerarReporteInteligente expect=INVALID
+query GenerarReporteInteligente($pregunta: String!) {
+  generarReporteInteligente(pregunta: $pregunta) {
+    explicacionNatural consultaSqlEjecutada columnas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf
+  }
+}
+
+#@ CrearPaciente expect=INVALID
+mutation CrearPaciente($input: PacienteInput!) {
+  crearPaciente(input: $input) { id ciNit nombres apellidos telefonoWhatsapp email fechaNacimiento }
+}
+
+#@ ActualizarPaciente expect=INVALID
+mutation ActualizarPaciente($id: ID!, $input: PacienteInput!) {
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos telefonoWhatsapp email fechaNacimiento }
+}
+
+#@ CrearOdontologo expect=INVALID
+mutation CrearOdontologo($input: OdontologoInput!) {
+  crearOdontologo(input: $input) { id nombres apellidos matricula telefono activo especialidad { id nombre } }
+}
+
+#@ ActualizarOdontologo expect=INVALID
+mutation ActualizarOdontologo($id: ID!, $input: OdontologoInput!) {
+  actualizarOdontologo(id: $id, input: $input) { id nombres apellidos matricula telefono activo especialidad { id nombre } }
+}
+
+#@ CrearEspecialidad expect=INVALID
+mutation CrearEspecialidad($input: EspecialidadInput!) {
+  crearEspecialidad(input: $input) { id nombre descripcion }
+}
+
+#@ CrearConsultorio expect=INVALID
+mutation CrearConsultorio($input: ConsultorioInput!) {
+  crearConsultorio(input: $input) { id nombre ubicacion activo }
+}
+
+#@ CrearServicioOdontologico expect=INVALID
+mutation CrearServicioOdontologico($input: ServicioOdontologicoInput!) {
+  crearServicioOdontologico(input: $input) { id codigo nombre descripcion precioBs activo }
+}
+
+#@ ActualizarServicioOdontologico expect=INVALID
+mutation ActualizarServicioOdontologico($id: ID!, $input: ServicioOdontologicoInput!) {
+  actualizarServicioOdontologico(id: $id, input: $input) { id codigo nombre descripcion precioBs activo }
+}
+
+#@ ActualizarConfiguracionEmpresa expect=INVALID
+mutation ActualizarConfiguracionEmpresa($input: ConfiguracionEmpresaInput!) {
+  actualizarConfiguracionEmpresa(input: $input) { nit razonSocial direccion telefono email ciudad }
+}
+
+#@ CrearOrdenCobroManual expect=INVALID
+mutation CrearOrdenCobroManual($input: CrearOrdenCobroManualInput!) {
+  crearOrdenCobroManual(input: $input) { id codigo origen concepto montoTotal descuento montoNeto estado tipoPago fechaCreacion
+  paciente { id ciNit nombres apellidos }
+  cuotas { id numero monto fechaVencimiento estado } }
+}
+
+#@ ConfigurarPlanDePagos expect=INVALID
+mutation ConfigurarPlanDePagos($input: ConfigurarPlanDePagosInput!) {
+  configurarPlanDePagos(input: $input) { id codigo origen concepto montoTotal descuento montoNeto estado tipoPago fechaCreacion
+  paciente { id ciNit nombres apellidos }
+  cuotas { id numero monto fechaVencimiento estado } }
+}
+
+#@ CobrarCuotaEnEfectivo expect=INVALID
+mutation CobrarCuotaEnEfectivo($input: CobrarCuotaEnEfectivoInput!) {
+  cobrarCuotaEnEfectivo(input: $input) { id numeroRecibo fechaEmision monto metodoPago ciNit razonSocial concepto urlDescargaPdf }
+}
+
+#@ GenerarQrPagoFacil expect=INVALID
+mutation GenerarQrPagoFacil($cuotaId: ID!) {
+  generarQrPagoFacil(cuotaId: $cuotaId) { pagofacilTransactionId qrImagenBase64 monto fechaExpiracion estado }
+}
+
+#@ SimularConfirmacionQrDev expect=INVALID
+mutation SimularConfirmacionQrDev($pagofacilTransactionId: String!) {
+  simularConfirmacionQrDev(pagofacilTransactionId: $pagofacilTransactionId) {
+    pagofacilTransactionId qrImagenBase64 monto fechaExpiracion estado
+    recibo { id numeroRecibo fechaEmision monto metodoPago ciNit razonSocial concepto urlDescargaPdf }
+  }
+}
+
+#@ RegistrarEgresoCaja expect=INVALID
+mutation RegistrarEgresoCaja($input: RegistrarEgresoCajaInput!) {
+  registrarEgresoCaja(input: $input) { id fecha tipo categoria concepto metodoPago monto reciboId }
+}
+
+#@ EliminarPaciente expect=INVALID
+mutation EliminarPaciente($id: ID!) {
+  eliminarPaciente(id: $id)
+}
+
+#@ EliminarOdontologo expect=INVALID
+mutation EliminarOdontologo($id: ID!) {
+  eliminarOdontologo(id: $id)
+}
+
+#@ ActualizarEspecialidad expect=INVALID
+mutation ActualizarEspecialidad($id: ID!, $input: EspecialidadInput!) {
+  actualizarEspecialidad(id: $id, input: $input) { id nombre descripcion }
+}
+
+#@ EliminarEspecialidad expect=INVALID
+mutation EliminarEspecialidad($id: ID!) {
+  eliminarEspecialidad(id: $id)
+}
+
+#@ ActualizarConsultorio expect=INVALID
+mutation ActualizarConsultorio($id: ID!, $input: ConsultorioInput!) {
+  actualizarConsultorio(id: $id, input: $input) { id nombre ubicacion activo }
+}
+
+#@ EliminarConsultorio expect=INVALID
+mutation EliminarConsultorio($id: ID!) {
+  eliminarConsultorio(id: $id)
+}
+
+#@ EliminarServicioOdontologico expect=INVALID
+mutation EliminarServicioOdontologico($id: ID!) {
+  eliminarServicioOdontologico(id: $id)
+}
+
+#@ ActualizarUsuario expect=INVALID
+mutation ActualizarUsuario($id: ID!, $input: ActualizarUsuarioInput!) {
+  actualizarUsuario(id: $id, input: $input) { id username nombreCompleto rol activo }
+}
+

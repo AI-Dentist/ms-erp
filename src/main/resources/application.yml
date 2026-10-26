@@ -1,0 +1,126 @@
+spring:
+  application:
+    name: dental-erp-ms1
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${ERP_DB_URL:jdbc:postgresql://localhost:5432/dental_erp}
+    username: ${ERP_DB_USER:erp_user}
+    password: ${ERP_DB_PASSWORD:erp_password}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  rabbitmq:
+    listener:
+      simple:
+        # Failed saga deliveries are rejected to the configured DLX, never requeued forever.
+        default-requeue-rejected: false
+    host: ${ERP_RABBIT_HOST:localhost}
+    port: ${ERP_RABBIT_PORT:5672}
+    username: ${ERP_RABBIT_USER:erp_user}
+    password: ${ERP_RABBIT_PASSWORD:erp_password}
+  graphql:
+    graphiql:
+      enabled: false
+    schema:
+      locations: classpath:graphql/
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/dental-platform}
+  ai:
+    mcp:
+      server:
+        protocol: STREAMABLE
+        type: SYNC
+        name: dental-erp-ms1
+        version: 1.0.0
+        streamable-http:
+          mcp-endpoint: /mcp
+    openai:
+      api-key: ${OPENAI_API_KEY:not-configured}
+      chat:
+        options:
+          model: ${ERP_AI_MODEL:gpt-4o-mini}
+          temperature: 0.0
+
+server:
+  port: ${ERP_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+erp:
+  cors:
+    # Explicit origins only (never '*'). Empty = CORS disabled, no Access-Control-* headers are emitted.
+    allowed-origins: ${ERP_CORS_ALLOWED_ORIGINS:}
+    max-age-seconds: 600
+  security:
+    local-dev-user:
+      # Profile 'local' only (startup fails otherwise): X-Dev-User header authentication. See application-local.yml.
+      enabled: false
+  messaging:
+    exchange: dental.topic.exchange
+    consulta-finalizada-queue: erp.consulta.finalizada.queue
+    consulta-finalizada-routing-key: clinica.consulta.finalizada
+    dead-letter-exchange: dental.dlx.exchange
+    consulta-finalizada-dlq: erp.consulta.finalizada.dlq
+  idempotency:
+    ttl-hours: 24
+  pagofacil:
+    mock-enabled: ${PAGOFACIL_MOCK_ENABLED:true}
+    base-url: ${PAGOFACIL_BASE_URL:https://masterqr.pagofacil.com.bo/api/services/v2}
+    token-service: ${PAGOFACIL_TOKEN_SERVICE:}
+    token-secret: ${PAGOFACIL_TOKEN_SECRET:}
+    callback-url: ${PAGOFACIL_CALLBACK_URL:http://localhost:8081/api/v1/webhooks/pagofacil}
+    # LOCAL MOCK ONLY: X-Local-Mock-Secret; no production PagoFacil protocol is implemented.
+    # Blank and change-me are rejected, including callback retries. See PagoFacilWebhookController.
+    webhook-secret: ${PAGOFACIL_WEBHOOK_SECRET:}
+    dev-simulation-enabled: false
+    qr-expiration-minutes: 30
+  n8n:
+    enabled: ${N8N_ENABLED:false}
+    webhook-url: ${N8N_WEBHOOK_URL:http://localhost:5678/webhook/erp-recibo-emitido}
+    connect-timeout-ms: 1000
+    read-timeout-ms: 2000
+  receipts:
+    # Explicit development default. Deployments select s3 (alias: minio); never falls back on failure.
+    # Private bucket provisioning and scoped credentials: docs/s3-receipts.md.
+    mode: ${ERP_RECEIPTS_MODE:local}
+    storage-dir: ${ERP_RECEIPTS_STORAGE_DIR:${java.io.tmpdir}/erp-recibos}
+    minio:
+      endpoint: ${ERP_RECEIPTS_MINIO_ENDPOINT:}
+      access-key: ${ERP_RECEIPTS_MINIO_ACCESS_KEY:}
+      secret-key: ${ERP_RECEIPTS_MINIO_SECRET_KEY:}
+      bucket: ${ERP_RECEIPTS_MINIO_BUCKET:}
+      # provider: aws (IAM credential chain when keys are blank; region required) or s3-compatible (SeaweedFS; static keys).
+      provider: ${ERP_RECEIPTS_MINIO_PROVIDER:s3-compatible}
+      region: ${ERP_RECEIPTS_MINIO_REGION:}
+      expiry-seconds: ${ERP_RECEIPTS_MINIO_EXPIRY_SECONDS:300}
+      connect-timeout-ms: 1000
+      read-timeout-ms: 2000
+      write-timeout-ms: 2000
+      call-timeout-ms: 5000
+  reports:
+    # Lazy dedicated pool; blank credentials disable ONLY reports. No writable-DB fallback.
+    # Provision a new nonowner SELECT-only login manually with scripts/reporting-role.sql after V5.
+    db-url: ${ERP_REPORT_DB_URL:${spring.datasource.url}}
+    db-user: ${ERP_REPORT_DB_USER:}
+    db-password: ${ERP_REPORT_DB_PASSWORD:}
+    # Fixed security bounds: pool=2, acquire/query=3s, socket=5s, rows=500,
+    # columns=16, cell text=128, cache=64 reports / 600s absolute TTL (per principal access).
+    # AI receives the original bounded question and approved schema, never DB rows/patient records.
+    # Do not include personal data in questions or enable prompt/provider payload logging.
