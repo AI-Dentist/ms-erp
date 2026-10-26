@@ -159,6 +159,8 @@ type Paciente {
   ciNit: String!
   direccion: String
   email: String
+  fechaNacimiento: Date
+  genero: String
   id: UUID!
   nombres: String!
   telefonoWhatsapp: String!

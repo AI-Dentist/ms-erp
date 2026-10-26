@@ -102,6 +102,8 @@ type Paciente {
     ciNit: String!
     nombres: String!
     apellidos: String!
+    fechaNacimiento: Date
+    genero: String
     telefonoWhatsapp: String!
     email: String
     direccion: String

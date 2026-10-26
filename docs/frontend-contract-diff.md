@@ -6,14 +6,16 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 
 **Regla:** fuera de la eliminación solicitada de `generarReporteInteligente` y la nueva ruta de exportación, ningún contrato existente del backend cambia de significado ni de nulabilidad. S9 (2026-10-23) añadió, solo de forma aditiva, 11 operaciones de edición/baja, 6 inputs `Actualizar*Input` y el campo `activo: Boolean!` en `Paciente`, `Odontologo`, `Especialidad` y `ServicioOdontologico` (sección "Edición y baja lógica (S9)"). Todo lo demás es "qué debe adaptar el frontend"; solo las 3 operaciones de caja/QR sin equivalente siguen requiriendo una decisión.
 
+La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `Paciente.genero: String`, nullable, sin cambiar inputs ni permisos. `actualizarPaciente` sigue reemplazando: omitir estos campos los borra; para conservarlos hay que leerlos y reenviarlos (ver [guía](patient-demographic-readback.md)). `docs/graphql/introspection-live.json` es una instantánea histórica, no el contrato canónico actual; no se regenera consultando un servidor compartido.
+
 ## Resumen
 
-**37 operaciones del frontend validadas: 1 válidas, 36 inválidas** contra el esquema servido.
+**37 operaciones del frontend validadas: 2 válidas, 35 inválidas** contra el esquema servido.
 
 | Estado | Operaciones |
 | --- | --- |
-| OK (válidas tal cual) | 1: `listarEspecialidades` |
-| Existe con otra forma → el frontend se adapta | 32: 21 de campos/args/inputs/enums/tipos + las 11 operaciones de S9, que ya existen pero cuyos documentos del frontend siguen usando `ID!`, inputs con otro nombre o campos distintos |
+| OK (válidas tal cual) | 2: `listarEspecialidades`, `listarPacientes` |
+| Existe con otra forma → el frontend se adapta | 31: 20 de campos/args/inputs/enums/tipos + las 11 operaciones de S9, que ya existen pero cuyos documentos del frontend siguen usando `ID!`, inputs con otro nombre o campos distintos |
 | NO EXISTE en backend | 4 (incluye la consulta de reportes eliminada) |
 
 ### Operaciones que el backend NO ofrece
@@ -27,7 +29,7 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | `actualizarPaciente`, `actualizarOdontologo`, `actualizarEspecialidad`, `actualizarConsultorio`, `actualizarServicioOdontologico`, `actualizarUsuario` | **YA EXISTEN (S9).** Adaptar el documento: `$id: UUID!`, input `Actualizar<Entidad>Input` (ver sección S9) y los campos de respuesta reales. |
 | `eliminarPaciente`, `eliminarOdontologo`, `eliminarEspecialidad`, `eliminarConsultorio`, `eliminarServicioOdontologico` | **YA EXISTEN (S9)** como **baja lógica** (`activo = false`; consultorio → `estado = INACTIVO`), nunca borran filas. Solo hay que cambiar `$id: ID!` por `$id: UUID!`; devuelven `Boolean!`. |
 
-(Las 3 que "NO EXISTEN" son: `consultarEstadoQrPagoFacil`, `obtenerResumenCaja` y `listarMovimientosCaja`. `obtenerOrdenCobro` y `listarLogsAuditoria` son renombres y cuentan en las 32 "adaptar", junto con los 6 `actualizar*` y 5 `eliminar*` de S9.)
+(Las 3 que "NO EXISTEN" son: `consultarEstadoQrPagoFacil`, `obtenerResumenCaja` y `listarMovimientosCaja`. `obtenerOrdenCobro` y `listarLogsAuditoria` son renombres y cuentan en las 31 "adaptar", junto con los 6 `actualizar*` y 5 `eliminar*` de S9.)
 
 ## Reglas transversales
 
@@ -38,7 +40,7 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 | Fechas de calendario | `string` | `Date` = `yyyy-MM-dd` (`fechaVencimiento`, `fechaPrimeraCuota`, `fechaNacimiento`) | Enviar/leer `2026-11-15`. |
 | Instantes | `string` | `DateTime` = ISO-8601 **con offset** (`2026-10-22T10:15:30-04:00`); entrada sin offset se rechaza | Enviar offset siempre (`toISOString()` con `Z` es válido). |
 | Rangos de caja | `String!` | `DateTime!` | Cambiar tipo de variables y enviar instantes con offset. |
-| Nulabilidad | campos opcionales | casi todo `!`; opcionales reales: `emailContacto`, `Paciente.email/direccion`, `Odontologo.email`, `Consultorio.ubicacion`, `descripcion`, `OrdenCobro.odontologo/consultaExternaId`, `CuotaPago.fechaPago`, `Recibo.pdfUrlS3`, `TransaccionQr.fechaExpiracion`, `MovimientoCaja.recibo` | Que el frontend tolere más campos no nulos de los que modela no rompe nada. Lo que el frontend marca opcional y el backend exige (`telefonoWhatsapp`, `telefono`) hay que volverlo obligatorio en formularios. |
+| Nulabilidad | campos opcionales | casi todo `!`; opcionales reales: `emailContacto`, `Paciente.email/direccion/fechaNacimiento/genero`, `Odontologo.email`, `Consultorio.ubicacion`, `descripcion`, `OrdenCobro.odontologo/consultaExternaId`, `CuotaPago.fechaPago`, `Recibo.pdfUrlS3`, `TransaccionQr.fechaExpiracion`, `MovimientoCaja.recibo` | Que el frontend tolere más campos no nulos de los que modela no rompe nada. Lo que el frontend marca opcional y el backend exige (`telefonoWhatsapp`, `telefono`) hay que volverlo obligatorio en formularios. |
 | Campos extra del backend | — | Campos `!` que el frontend no pide (`reporteId`, `preguntaOriginal`, `enviadoWhatsapp`…) | Sin problema: GraphQL solo devuelve lo pedido. |
 | Roles (servidor) | — | `ANY_ROLE` = ADMIN/CAJERO/RECEPCIONISTA/ODONTOLOGO; lecturas de catálogos y empresa. `ADMIN`: usuarios, auditoría, reportes, actualizar empresa, crear especialidad/odontólogo/consultorio/servicio. `ADMIN`/`RECEPCIONISTA`: `crearPaciente`, `actualizarPaciente`, `eliminarPaciente`. `ADMIN` (S9): `actualizarOdontologo/Especialidad/Consultorio/ServicioOdontologico/Usuario` y `eliminarOdontologo/Especialidad/Consultorio/ServicioOdontologico`. `ADMIN`/`CAJERO`/`RECEPCIONISTA`: lecturas y planes de órdenes de cobro, `crearOrdenCobroManual`, `configurarPlanDePagos`, `obtenerFlujoCaja`. `ADMIN`/`CAJERO`: cobro en efectivo, egreso, QR, simulación, `Recibo.pdfUrlS3`. | Ocultar/deshabilitar acciones según rol; el servidor responde `FORBIDDEN` si no corresponde. |
 | `Idempotency-Key` | UUID por mutación | Filtro en `POST` con la cabecera; sin cabecera la petición pasa sin protección | Enviarla siempre en mutaciones financieras. |
@@ -47,10 +49,10 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 
 | Uso en frontend | Contrato real | Estado | Qué cambia el frontend |
 | --- | --- | --- | --- |
-| `Paciente.fechaNacimiento` (query y `PacienteInput`) | `Paciente` **no expone** `fechaNacimiento`; solo existe como entrada en `CrearPacienteInput.fechaNacimiento: Date` | NO EXISTE (lectura) | Quitar de los campos pedidos; enviarla solo al crear. Si se necesita leerla → backend nuevo (decisión pendiente). |
-| `PacienteInput` | `CrearPacienteInput`: `ciNit!, nombres!, apellidos!, fechaNacimiento, genero, telefonoWhatsapp!, email, direccion` | renombrar + nulabilidad | Usar el nombre real; `telefonoWhatsapp` es obligatorio; hay `direccion` y `genero` (no leídos en `Paciente` salvo `direccion`). Ver ejemplo `CrearPaciente`. |
+| `Paciente.fechaNacimiento`, `Paciente.genero` | `fechaNacimiento: Date`, `genero: String`, ambos nullable; devuelven los valores persistidos en creación, actualización, listado y detalle | OK (aditivo) | Fecha `yyyy-MM-dd`, género libre (no enum), sin valores por defecto; conservar `null`. Ver [guía de lectura y reenvío](patient-demographic-readback.md). |
+| `PacienteInput` | `CrearPacienteInput`: `ciNit!, nombres!, apellidos!, fechaNacimiento, genero, telefonoWhatsapp!, email, direccion` | renombrar + nulabilidad | Usar el nombre real; `telefonoWhatsapp` es obligatorio; hay `direccion`, `fechaNacimiento` y `genero`, también disponibles en la respuesta. Ver ejemplo `CrearPaciente`. |
 | `crearPaciente(input: PacienteInput!)`, `$id: ID!` | `crearPaciente(input: CrearPacienteInput!)`; `actualizarPaciente(id: UUID!, input: ActualizarPacienteInput!)`; `eliminarPaciente(id: UUID!): Boolean!` | tipo distinto | Cambiar el tipo del input y `ID!`→`UUID!`. Ver ejemplos `ActualizarPaciente`/`EliminarPaciente`. |
-| `listarPacientes(busqueda)` | igual, devuelve `[Paciente!]!` | OK (salvo `fechaNacimiento`) | — Ver `ListarPacientes`. |
+| `listarPacientes(busqueda)` | igual, devuelve `[Paciente!]!` | OK | — Ver `ListarPacientes`. |
 | `Odontologo.matricula` | `matriculaProfesional` | renombrar | Cambiar nombre. |
 | `Odontologo.especialidad { id nombre }` | `especialidades: [Especialidad!]!` (lista) | tipo distinto | Pasar a lista; el modelo del frontend admite una sola. |
 | `Odontologo.activo` | `activo: Boolean!` (S9); `listarOdontologos(soloActivos: Boolean = true)` filtra | OK desde S9 | Pedirlo tal cual; para ver inactivos pasar `soloActivos: false`. |
@@ -147,7 +149,7 @@ Operaciones nuevas, todas aditivas. Un `actualizar*` reemplaza **todos** los cam
 
 1. Declarar `$id: UUID!` en lugar de `ID!` (los `eliminar*` solo necesitan eso para ser válidos).
 2. Usar los inputs reales: `ActualizarPacienteInput`, `ActualizarOdontologoInput`, `ActualizarEspecialidadInput`, `ActualizarConsultorioInput`, `ActualizarServicioInput` y `ActualizarUsuarioInput` (campos en los ejemplos del Apéndice B, p. ej. `ci`, `porcentajeComision`, `especialidadesIds`, `codigo`, `rolCodigo`).
-3. Pedir los campos de respuesta reales (`matriculaProfesional`, `especialidades { nombre }`, `precioBaseBs`, `rol { codigo }`; `Consultorio` expone `estado`, no `activo`; `Paciente` no expone `fechaNacimiento`).
+3. Pedir los campos de respuesta reales (`matriculaProfesional`, `especialidades { nombre }`, `precioBaseBs`, `rol { codigo }`; `Consultorio` expone `estado`, no `activo`; `Paciente` ahora expone `fechaNacimiento: Date` y `genero: String`, ambos nullable).
 
 ## Evidencia por operación (frontend vs esquema servido)
 
@@ -161,7 +163,7 @@ Fuente: `src/test/resources/contract/real-examples.graphql`. Los UUID son marcad
 
 ```graphql
 query ListarPacientes($busqueda: String) {
-  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos telefonoWhatsapp email direccion }
+  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion }
 }
 ```
 
@@ -169,6 +171,20 @@ Variables:
 
 ```json
 {"busqueda": "Rojas"}
+```
+
+### ObtenerPacientePorId
+
+```graphql
+query ObtenerPacientePorId($id: UUID!) {
+  obtenerPacientePorId(id: $id) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion activo }
+}
+```
+
+Variables:
+
+```json
+{"id": "33333333-3333-4333-8333-333333333333"}
 ```
 
 ### ListarOdontologos
@@ -331,7 +347,7 @@ Variables:
 
 ```graphql
 mutation CrearPaciente($input: CrearPacienteInput!) {
-  crearPaciente(input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion }
+  crearPaciente(input: $input) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion }
 }
 ```
 
@@ -538,7 +554,7 @@ Ejemplos válidos de las 11 operaciones nuevas. Los ids son marcadores: use los 
 
 ```graphql
 mutation ActualizarPaciente($id: UUID!, $input: ActualizarPacienteInput!) {
-  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion activo }
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion activo }
 }
 ```
 

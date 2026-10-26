@@ -6,9 +6,15 @@
 
 #@ ListarPacientes
 query ListarPacientes($busqueda: String) {
-  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos telefonoWhatsapp email direccion }
+  listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion }
 }
 #@vars {"busqueda": "Rojas"}
+
+#@ ObtenerPacientePorId
+query ObtenerPacientePorId($id: UUID!) {
+  obtenerPacientePorId(id: $id) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion activo }
+}
+#@vars {"id": "33333333-3333-4333-8333-333333333333"}
 
 #@ ListarOdontologos
 query ListarOdontologos($soloActivos: Boolean) {
@@ -100,7 +106,7 @@ mutation EjecutarAgenteErp($instruccion: String!) {
 
 #@ CrearPaciente
 mutation CrearPaciente($input: CrearPacienteInput!) {
-  crearPaciente(input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion }
+  crearPaciente(input: $input) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion }
 }
 #@vars {"input": {"ciNit": "9876543", "nombres": "Lucia", "apellidos": "Rojas Mamani", "fechaNacimiento": "1990-05-17", "genero": "F", "telefonoWhatsapp": "+59171234567", "email": "lucia@example.bo", "direccion": "Av. Banzer 100"}}
 
@@ -191,7 +197,7 @@ query ListarCuotasPendientesPorPaciente($pacienteId: UUID!) {
 
 #@ ActualizarPaciente
 mutation ActualizarPaciente($id: UUID!, $input: ActualizarPacienteInput!) {
-  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos telefonoWhatsapp email direccion activo }
+  actualizarPaciente(id: $id, input: $input) { id ciNit nombres apellidos fechaNacimiento genero telefonoWhatsapp email direccion activo }
 }
 #@vars {"id": "33333333-3333-4333-8333-333333333333", "input": {"ciNit": "9876543", "nombres": "Ana María", "apellidos": "Rojas Mamani", "fechaNacimiento": "1990-01-31", "genero": "FEMENINO", "telefonoWhatsapp": "+59171111111", "email": null, "direccion": "Calle 5 #10"}}
 

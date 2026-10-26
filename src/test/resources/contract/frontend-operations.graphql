@@ -7,7 +7,7 @@
 # Each block starts with "#@ <name> expect=VALID|INVALID" (expectation = what docs/frontend-contract-diff.md states
 # against the real schema). FrontendExamplesValidationTest validates every block and reports the errors.
 
-#@ ListarPacientes expect=INVALID
+#@ ListarPacientes expect=VALID
 query ListarPacientes($busqueda: String) {
   listarPacientes(busqueda: $busqueda) { id ciNit nombres apellidos telefonoWhatsapp email fechaNacimiento }
 }

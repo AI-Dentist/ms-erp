@@ -3835,6 +3835,28 @@
           "isDeprecated" : false,
           "deprecationReason" : null
         }, {
+          "name" : "fechaNacimiento",
+          "description" : null,
+          "args" : [ ],
+          "type" : {
+            "kind" : "SCALAR",
+            "name" : "Date",
+            "ofType" : null
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
+          "name" : "genero",
+          "description" : null,
+          "args" : [ ],
+          "type" : {
+            "kind" : "SCALAR",
+            "name" : "String",
+            "ofType" : null
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
           "name" : "telefonoWhatsapp",
           "description" : null,
           "args" : [ ],
