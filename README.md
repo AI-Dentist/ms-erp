@@ -2,6 +2,11 @@
 
 Backend ERP odontológico: configuración, catálogos, cobros y reportes financieros dinámicos. Java 25, Spring Boot 4, Spring AI 2, PostgreSQL 18 y RabbitMQ 4.
 
+## Integración para MS2/MS3
+
+Consulte la [guía de integración de MS1](docs/ms1-integration.md): responsabilidades,
+GraphQL y permisos, pacientes, contratos RabbitMQ, MCP, excepciones REST e idempotencia.
+
 ## Inicio local
 
 Requiere JDK 25, Docker con Compose y acceso a las dependencias Maven. En Git Bash para Windows:
