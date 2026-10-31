@@ -40,9 +40,17 @@ identidad autorizada y los roles adecuados; no asumir acceso anónimo ni un rol 
 - Enviar `Content-Type: application/json`, `Authorization: Bearer <token>` y un cuerpo
   `{"query":"<documento GraphQL>","operationName":"<nombre>","variables":{}}`.
   Sustituir `variables` por el JSON asociado al ejemplo.
-- MS1 valida JWT de Keycloak (firma, issuer y expiración); los roles vienen de
+- MS1 valida JWT de Keycloak (firma, issuer, expiración y audiencia); los roles vienen de
   `realm_access.roles`. `KEYCLOAK_ISSUER_URI` configura el issuer, **no una API de login de MS1**.
   Obtener el token mediante el flujo de identidad acordado con Keycloak.
+- Tanto la cadena normal como `local` exigen `erp.security.jwt.audience`, configurada
+  mediante `ERP_JWT_AUDIENCE` (por defecto `ms-erp`). `aud` debe ser ese string exacto
+  o una lista de strings que lo contenga; no se recorta ni normaliza. Claims ausentes,
+  incorrectos o mal formados (incluidos elementos no string o nulos) devuelven HTTP 401
+  antes de cualquier mutación o auditoría. Una audiencia configurada vacía o solo con
+  espacios impide el arranque; no desactiva la política. La firma, issuer, vigencia y roles
+  siguen siendo obligatorios. El proveedor debe emitir esa audiencia en el access token;
+  esta unidad no modifica el realm ni despliega mappers.
 - Sin token válido: 401. GraphQL puede responder HTTP 200 con `errors`, incluido
   `FORBIDDEN`: comprobar siempre `errors`, no solo el código HTTP.
 - Solo desarrollo: `local` admite `X-Dev-User` de un usuario activo y conserva su rol;
@@ -247,7 +255,7 @@ ordinarias conservan los enlaces; una baja impide la consulta propia.
 
 | Fallo | Clasificación GraphQL / respuesta |
 |---|---|
-| JWT ausente, firma/issuer/vigencia inválidos | HTTP 401 antes de ejecutar la operación |
+| JWT ausente, firma/issuer/vigencia/audiencia inválidos | HTTP 401 antes de ejecutar la operación |
 | Rol insuficiente | `FORBIDDEN`, manejo de autorización existente |
 | Consulta propia sin subject JWT o con subject en blanco | `FORBIDDEN`: `Se requiere un JWT con subject` |
 | Consulta propia: usuario, enlace u odontólogo faltante/inactivo | `NOT_FOUND`: `Identidad odontológica no disponible` |

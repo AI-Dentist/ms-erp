@@ -1,5 +1,6 @@
 package com.dentalplatform.erp.shared.infrastructure.config;
 
+import com.dentalplatform.erp.shared.infrastructure.security.AudienceValidatingJwtDecoder;
 import com.dentalplatform.erp.shared.infrastructure.security.DevUserHeaderAuthenticationFilter;
 import com.dentalplatform.erp.shared.infrastructure.security.KeycloakRealmRoleConverter;
 import com.dentalplatform.erp.shared.infrastructure.security.LazyIssuerJwtDecoder;
@@ -64,15 +65,18 @@ public class SecurityConfig {
      * Profile {@code local} only: frontend integration. {@code X-Dev-User} is resolved to an ACTIVE database user whose
      * single role is granted, so method security still applies. No header (and no valid Bearer) means 401; there is
      * no anonymous all-roles fallback. Bearer JWTs are validated against {@code erp.security.local-dev-user.jwt-issuer-uri}
-     * (local Keycloak by default, blank disables them); the issuer is resolved lazily so startup never needs Keycloak.
+     * (local Keycloak by default, blank disables them) and require {@code erp.security.jwt.audience};
+     * the issuer is resolved lazily so startup never needs Keycloak.
      * A Bearer request never falls back to {@code X-Dev-User}.
      */
     @Bean
     @Profile("local")
     @ConditionalOnProperty(name = "erp.security.local-dev-user.enabled", havingValue = "true")
     SecurityFilterChain localSecurityFilterChain(HttpSecurity http, JdbcTemplate jdbc,
-                                                 @Value("${erp.security.local-dev-user.jwt-issuer-uri:}") String jwtIssuer)
+                                                 @Value("${erp.security.local-dev-user.jwt-issuer-uri:}") String jwtIssuer,
+                                                 @Value("${erp.security.jwt.audience:ms-erp}") String audience)
             throws Exception {
+        AudienceValidatingJwtDecoder.requireAudience(audience);
         http.csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -83,7 +87,7 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .addFilterBefore(new DevUserHeaderAuthenticationFilter(jdbc), AnonymousAuthenticationFilter.class);
         if (!jwtIssuer.isBlank()) {
-            JwtDecoder decoder = new LazyIssuerJwtDecoder(jwtIssuer.trim());
+            JwtDecoder decoder = new AudienceValidatingJwtDecoder(new LazyIssuerJwtDecoder(jwtIssuer.trim()), audience);
             http.oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.decoder(decoder)
                     .jwtAuthenticationConverter(jwtConverter())));
         }
@@ -97,11 +101,13 @@ public class SecurityConfig {
         return converter;
     }
 
-    /** Production: stateless OAuth2 resource server validating Keycloak JWTs. */
+    /** Production: retain the Boot decoder's JWT checks and additionally require the configured ERP audience. */
     @Bean
     @ConditionalOnExpression("!'${erp.security.dev-mode:false}'.equals('true') "
             + "&& !'${erp.security.local-dev-user.enabled:false}'.equals('true')")
-    SecurityFilterChain jwtSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain jwtSecurityFilterChain(HttpSecurity http, JwtDecoder decoder,
+                                               @Value("${erp.security.jwt.audience:ms-erp}") String audience) throws Exception {
+        JwtDecoder audienceDecoder = new AudienceValidatingJwtDecoder(decoder, audience);
         JwtAuthenticationConverter converter = jwtConverter();
         return http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -112,7 +118,8 @@ public class SecurityConfig {
                         // Local mock callback authenticates its own secret on every call; real provider is unsupported.
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/pagofacil").permitAll()
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
+                .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.decoder(audienceDecoder)
+                        .jwtAuthenticationConverter(converter)))
                 .build();
     }
 

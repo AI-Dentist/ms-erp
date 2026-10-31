@@ -83,7 +83,7 @@ final class EmbeddedOidc implements AutoCloseable {
 
     String token(RSAKey signingKey, String tokenIssuer, String subject, String username, String role, Instant expiry) {
         try {
-            var claims = new JWTClaimsSet.Builder().issuer(tokenIssuer).subject(subject)
+            var claims = new JWTClaimsSet.Builder().issuer(tokenIssuer).subject(subject).audience("ms-erp")
                     .claim("preferred_username", username).claim("realm_access", Map.of("roles", List.of(role)))
                     .issueTime(Date.from(Instant.now().minusSeconds(600))).expirationTime(Date.from(expiry)).build();
             var jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);

@@ -69,6 +69,8 @@ erp:
     allowed-origins: ${ERP_CORS_ALLOWED_ORIGINS:}
     max-age-seconds: 600
   security:
+    jwt:
+      audience: ${ERP_JWT_AUDIENCE:ms-erp}
     local-dev-user:
       # Profile 'local' only (startup fails otherwise): X-Dev-User header authentication. See application-local.yml.
       enabled: false

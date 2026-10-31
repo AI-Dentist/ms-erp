@@ -26,6 +26,7 @@ erp:
   cors:
     allowed-origins: ${ERP_CORS_ALLOWED_ORIGINS:http://localhost:4201}
   security:
+    # Bearer JWTs also require erp.security.jwt.audience (ERP_JWT_AUDIENCE, default ms-erp) inherited from application.yml.
     local-dev-user:
       # X-Dev-User: <username of an ACTIVE usuarios row>; only that user's role is granted.
       enabled: true
