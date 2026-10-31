@@ -3,6 +3,7 @@ package com.dentalplatform.erp.mastercatalog.infrastructure.persistence;
 import com.dentalplatform.erp.mastercatalog.domain.model.Especialidad;
 import com.dentalplatform.erp.mastercatalog.domain.model.Odontologo;
 import com.dentalplatform.erp.mastercatalog.domain.repository.OdontologoRepository;
+import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
@@ -34,6 +35,23 @@ class OdontologoRepositoryAdapter implements OdontologoRepository {
     @Override
     public Optional<Odontologo> buscarPorId(UUID id) {
         return repository.findById(id).map(OdontologoRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public Optional<Odontologo> buscarPorUsuarioId(UUID usuarioId) {
+        return repository.findByUsuarioId(usuarioId).map(OdontologoRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public Optional<Odontologo> bloquearPorId(UUID id) {
+        return repository.bloquearPorId(id).map(OdontologoRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public void vincularUsuarioId(UUID id, UUID usuarioId) {
+        if (repository.vincularUsuarioId(id, usuarioId) != 1) {
+            throw new BusinessRuleException("La identidad odontológica ya está vinculada");
+        }
     }
 
     @Override

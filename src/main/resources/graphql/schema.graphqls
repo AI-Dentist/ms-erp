@@ -12,6 +12,8 @@ type Query {
     listarPacientes(busqueda: String): [Paciente!]!
     obtenerPacientePorId(id: UUID!): Paciente
     listarOdontologos(soloActivos: Boolean = true): [Odontologo!]!
+    # Canonical identity from the verified JWT subject, never a caller-supplied identifier.
+    obtenerMiOdontologoId: UUID!
     listarEspecialidades: [Especialidad!]!
     listarConsultorios: [Consultorio!]!
     listarServiciosOdontologicos(especialidadId: UUID): [ServicioOdontologico!]!
@@ -28,6 +30,7 @@ type Mutation {
     crearPaciente(input: CrearPacienteInput!): Paciente!
     crearEspecialidad(codigo: String!, nombre: String!, descripcion: String): Especialidad!
     crearOdontologo(input: CrearOdontologoInput!): Odontologo!
+    vincularIdentidadOdontologo(input: VincularIdentidadOdontologoInput!): UUID!
     crearConsultorio(input: CrearConsultorioInput!): Consultorio!
     crearServicioOdontologico(input: CrearServicioInput!): ServicioOdontologico!
 
@@ -261,6 +264,13 @@ input CrearOdontologoInput {
     email: String
     porcentajeComision: BigDecimal!
     especialidadesIds: [UUID!]!
+}
+
+"ADMIN provisioning only; subject is opaque, case-sensitive, nonblank, at most 100 characters."
+input VincularIdentidadOdontologoInput {
+    usuarioId: UUID!
+    odontologoId: UUID!
+    keycloakSubject: String!
 }
 
 input CrearConsultorioInput {

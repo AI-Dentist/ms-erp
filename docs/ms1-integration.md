@@ -9,6 +9,7 @@ Las mutaciones se muestran como documentación: no ejecutarlas contra entornos c
 - [Conectar y autenticar](#conectar-y-autenticar)
 - [Pacientes: leer y escribir](#pacientes-leer-y-escribir)
 - [Otros catálogos, identidad y finanzas](#otros-catálogos-identidad-y-finanzas)
+- [Identidad canónica del odontólogo](#identidad-canónica-del-odontólogo)
 - [RabbitMQ: sincronización y consulta finalizada](#rabbitmq-sincronización-y-consulta-finalizada)
 - [MCP, REST e idempotencia](#mcp-rest-e-idempotencia)
 - SDL publicado: [schema.graphqls](graphql/schema.graphqls) e [introspección](graphql/introspection.json).
@@ -207,6 +208,58 @@ Variables:
 Importes en Bolivianos (`Bs`). El cobro actualiza cuota, saldo, ingreso y recibo en
 una transacción. `Recibo.pdfUrlS3` exige CAJA; un fallo posterior de PDF/storage no
 justifica repetir el cobro. Historial: ADMIN ve todo, los demás solo lo propio.
+
+## Identidad canónica del odontólogo
+
+**MS2/MS3 deben usar el UUID devuelto por `obtenerMiOdontologoId`, no el `sub` del JWT
+como UUID de odontólogo.** No cambian las claves primarias, las validaciones financieras
+ni el contrato de eventos. No se añade directorio de cuentas ni campos de enlace a los listados.
+
+| Operación / firma SDL | Roles | Contrato |
+|---|---|---|
+| Query `obtenerMiOdontologoId: UUID!` | ODONTOLOGO o ADMIN | Sin argumentos; usa exclusivamente el `sub` verificado, usuario activo y odontólogo activo asociado |
+| Mutation `vincularIdentidadOdontologo(input: VincularIdentidadOdontologoInput!): UUID!` | ADMIN | Aprovisiona ambos enlaces en una transacción y devuelve el UUID canónico |
+| Input `VincularIdentidadOdontologoInput` | ADMIN | `usuarioId: UUID!`, `odontologoId: UUID!`, `keycloakSubject: String!` |
+
+`keycloakSubject` es texto opaco, sensible a mayúsculas: no necesita ser UUID.
+Debe tener 1–100 caracteres y no estar en blanco; no se recorta ni normaliza.
+`username`, email, nombre y `preferred_username` **no sustituyen al subject** en esta consulta.
+`X-Dev-User` y el bypass `dev` no aportan un subject JWT y no permiten resolverla.
+El rol de base de datos del usuario vinculado no impone una restricción adicional;
+los roles anteriores son los del JWT solicitante.
+
+### Aprovisionar un enlace faltante
+
+1. Un ADMIN obtiene los UUID mediante `crearUsuario`/`listarUsuarios` y
+   `crearOdontologo`/`listarOdontologos`; ambos registros deben estar activos y sin enlaces previos.
+2. Confirma el subject exacto con el proveedor de identidad de confianza, sin deducirlo
+   del nombre o correo, y ejecuta `vincularIdentidadOdontologo` con esos tres valores.
+3. El titular consulta `obtenerMiOdontologoId` con su JWT ODONTOLOGO/ADMIN.
+   MS2/MS3 conservan ese UUID para referencias clínicas/de agenda y eventos.
+
+Un enlace nuevo genera una auditoría `IDENTIDAD_ODONTOLOGO_VINCULADA`, sin evento de catálogo.
+Repetir los tres valores **ya completamente consistentes** devuelve el mismo UUID sin
+escrituras ni otra auditoría. Cambiar subject, usuario u odontólogo de un enlace existente,
+apropiarse del enlace de otro usuario o completar parcialmente un enlace legado se rechaza:
+no hay reparación ni reasignación pública automática. Escalar estos casos al operador;
+no borrar enlaces ni sustituir UUID para sortear el rechazo. Las actualizaciones y bajas
+ordinarias conservan los enlaces; una baja impide la consulta propia.
+
+| Fallo | Clasificación GraphQL / respuesta |
+|---|---|
+| JWT ausente, firma/issuer/vigencia inválidos | HTTP 401 antes de ejecutar la operación |
+| Rol insuficiente | `FORBIDDEN`, manejo de autorización existente |
+| Consulta propia sin subject JWT o con subject en blanco | `FORBIDDEN`: `Se requiere un JWT con subject` |
+| Consulta propia: usuario, enlace u odontólogo faltante/inactivo | `NOT_FOUND`: `Identidad odontológica no disponible` |
+| Aprovisionamiento: UUID inexistente | `NOT_FOUND`: `Usuario no encontrado` / `Odontólogo no encontrado` |
+| Aprovisionamiento: registro inactivo | `BAD_REQUEST`: `El usuario está inactivo` / `El odontólogo está inactivo` |
+| Subject vacío, en blanco o mayor de 100 caracteres | `BAD_REQUEST`: `El subject de Keycloak debe tener entre 1 y 100 caracteres y no estar en blanco` |
+| Enlace previo, parcial o conflictivo | `BAD_REQUEST`: `La identidad odontológica ya está vinculada` |
+| Conflicto concurrente de unicidad | `BAD_REQUEST`: `El registro viola una restricción de unicidad o integridad` |
+
+Los errores GraphQL usan HTTP 200 con `errors`; los rechazos no modifican enlaces ni auditoría.
+Bloqueos en orden usuario→odontólogo y restricciones únicas existentes resuelven reclamaciones
+concurrentes sin migraciones. La política de audience es un trabajo separado, no parte de este enlace.
 
 ## RabbitMQ: sincronización y consulta finalizada
 

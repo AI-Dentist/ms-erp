@@ -12,6 +12,15 @@ public interface UsuarioRepository {
 
     Optional<Usuario> buscarPorId(UUID id);
 
+    /** Exact opaque JWT subject lookup, without a username fallback. */
+    Optional<Usuario> buscarPorKeycloakId(String keycloakId);
+
+    /** Locks the user row until transaction completion; identity provisioning locks user before dentist. */
+    Optional<Usuario> bloquearPorId(UUID id);
+
+    /** Assigns a subject only to an unbound user, inside the provisioning transaction. */
+    void vincularKeycloakId(UUID id, String keycloakId);
+
     /** Resolves the user behind an authenticated principal (Keycloak subject first, then username). */
     Optional<Usuario> buscarPorKeycloakIdOUsername(String keycloakId, String username);
 

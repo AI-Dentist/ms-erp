@@ -12,6 +12,14 @@ public interface OdontologoRepository {
 
     Optional<Odontologo> buscarPorId(UUID id);
 
+    Optional<Odontologo> buscarPorUsuarioId(UUID usuarioId);
+
+    /** Locks the dentist row; provisioning must already hold the user row lock. */
+    Optional<Odontologo> bloquearPorId(UUID id);
+
+    /** Assigns a user only to an unbound dentist, inside the provisioning transaction. */
+    void vincularUsuarioId(UUID id, UUID usuarioId);
+
     boolean existeCi(String ci);
 
     boolean existeMatricula(String matriculaProfesional);

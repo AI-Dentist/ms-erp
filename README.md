@@ -6,6 +6,9 @@ Backend ERP odontológico: configuración, catálogos, cobros y reportes financi
 
 Consulte la [guía de integración de MS1](docs/ms1-integration.md): responsabilidades,
 GraphQL y permisos, pacientes, contratos RabbitMQ, MCP, excepciones REST e idempotencia.
+La [identidad canónica del odontólogo](docs/ms1-integration.md#identidad-canónica-del-odontólogo)
+se resuelve desde el subject JWT con `obtenerMiOdontologoId`; ADMIN aprovisiona los enlaces
+mediante `vincularIdentidadOdontologo`, sin cambiar UUID ni inferirlos del correo o nombre.
 
 ## Inicio local
 

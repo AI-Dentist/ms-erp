@@ -22,7 +22,8 @@ public class OdontologoJpaEntity {
     @Id
     private UUID id;
 
-    @Column(name = "usuario_id", unique = true)
+    // Identity is written separately so stale catalog updates/deactivations cannot erase a new link.
+    @Column(name = "usuario_id", unique = true, updatable = false)
     private UUID usuarioId;
 
     @Column(nullable = false, unique = true, length = 25)
