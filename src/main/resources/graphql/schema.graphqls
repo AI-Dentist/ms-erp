@@ -6,6 +6,8 @@ scalar DateTime
 type Query {
     obtenerConfiguracionEmpresa: EmpresaConfig!
     listarUsuarios: [Usuario!]!
+    # ADMIN/CAJERO: exact verified JWT subject -> active ERP user, without a doctor dependency.
+    obtenerMiUsuarioId: UUID!
     listarRoles: [Rol!]!
     listarAuditLogs(limite: Int = 50): [AuditLog!]!
 
@@ -27,6 +29,7 @@ type Query {
 type Mutation {
     actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
     crearUsuario(input: CrearUsuarioInput!): Usuario!
+    vincularIdentidadUsuario(input: VincularIdentidadUsuarioInput!): UUID!
     crearPaciente(input: CrearPacienteInput!): Paciente!
     crearEspecialidad(codigo: String!, nombre: String!, descripcion: String): Especialidad!
     crearOdontologo(input: CrearOdontologoInput!): Odontologo!
@@ -242,6 +245,12 @@ input CrearUsuarioInput {
     email: String!
     nombreCompleto: String!
     password: String!
+}
+
+"ADMIN user-only provisioning; opaque subject unchanged, nonblank, at most 100 Unicode code points."
+input VincularIdentidadUsuarioInput {
+    usuarioId: UUID!
+    keycloakSubject: String!
 }
 
 input CrearPacienteInput {

@@ -9,6 +9,7 @@ Las mutaciones se muestran como documentación: no ejecutarlas contra entornos c
 - [Conectar y autenticar](#conectar-y-autenticar)
 - [Pacientes: leer y escribir](#pacientes-leer-y-escribir)
 - [Otros catálogos, identidad y finanzas](#otros-catálogos-identidad-y-finanzas)
+- [Identidad canónica del usuario ERP](#identidad-canónica-del-usuario-erp)
 - [Identidad canónica del odontólogo](#identidad-canónica-del-odontólogo)
 - [RabbitMQ: sincronización y consulta finalizada](#rabbitmq-sincronización-y-consulta-finalizada)
 - [MCP, REST e idempotencia](#mcp-rest-e-idempotencia)
@@ -216,6 +217,81 @@ Variables:
 Importes en Bolivianos (`Bs`). El cobro actualiza cuota, saldo, ingreso y recibo en
 una transacción. `Recibo.pdfUrlS3` exige CAJA; un fallo posterior de PDF/storage no
 justifica repetir el cobro. Historial: ADMIN ve todo, los demás solo lo propio.
+
+## Identidad canónica del usuario ERP
+
+**ADMIN/CAJERO deben obtener el UUID del usuario ERP con `obtenerMiUsuarioId`,
+no convertir `sub` en UUID ni buscar por `preferred_username`.** No requiere odontólogo:
+no crear uno ficticio para vincular un cajero. El rol almacenado del usuario no debe
+coincidir necesariamente con el rol JWT; no se añade esa política.
+
+| Operación / firma SDL | Roles JWT | Contrato |
+|---|---|---|
+| Query `obtenerMiUsuarioId: UUID!` | ADMIN, CAJERO | Sin argumentos; subject JWT exacto → usuario activo; solo lectura |
+| Mutation `vincularIdentidadUsuario(input: VincularIdentidadUsuarioInput!): UUID!` | ADMIN | Vincula usuario activo y devuelve su UUID |
+| Input `VincularIdentidadUsuarioInput` | ADMIN | `usuarioId: UUID!`, `keycloakSubject: String!` |
+
+### Vincular y consultar
+
+1. ADMIN crea/selecciona el usuario con las operaciones existentes y confirma su subject
+   exacto con el proveedor de identidad de confianza; nunca lo deduce de nombre o email.
+2. Para un usuario sin odontólogo, ejecuta la mutación siguiente. El subject es texto opaco,
+   no blanco y de hasta **100 puntos de código Unicode**; se conserva sin trim ni normalización.
+3. El titular consulta su identidad con un access token válido ADMIN/CAJERO.
+
+```graphql
+mutation VincularUsuario($input: VincularIdentidadUsuarioInput!) {
+  vincularIdentidadUsuario(input: $input)
+}
+```
+
+Variables:
+
+```json
+{"input":{"usuarioId":"77777777-7777-4777-8777-777777777777","keycloakSubject":"synthetic:cashier-subject"}}
+```
+
+```graphql
+query MiUsuarioErp { obtenerMiUsuarioId }
+```
+
+Variables:
+
+```json
+{}
+```
+
+Un enlace nuevo registra `IDENTIDAD_USUARIO_VINCULADA` sobre `usuarios`, con el subject
+exacto en `detalleJson`; no emite eventos de catálogo. Repetir los dos valores exactos
+devuelve el mismo ID **sin otra auditoría**. Bloqueo de usuario, UPDATE condicional y
+restricción única existentes arbitran reclamaciones concurrentes: una vinculación y una
+auditoría; el perdedor no reserva su usuario. No hay migración, backfill ni reasignación.
+
+| Fallo | Respuesta |
+|---|---|
+| JWT ausente, firma/issuer/vigencia/audiencia inválidos | HTTP 401 |
+| Rol insuficiente | GraphQL `FORBIDDEN` |
+| Consulta sin subject JWT o en blanco (también principal `X-Dev-User`/bypass dev) | `FORBIDDEN`: `Se requiere un JWT con subject` |
+| Consulta con enlace ausente o usuario inactivo | `NOT_FOUND`: `Identidad de usuario no disponible` |
+| Vinculación con UUID inexistente | `NOT_FOUND`: `Usuario no encontrado` |
+| Vinculación con usuario inactivo, incluso repetida | `BAD_REQUEST`: `El usuario está inactivo` |
+| Subject vacío, en blanco o mayor de 100 puntos de código | `BAD_REQUEST`: `El subject de Keycloak debe tener entre 1 y 100 caracteres y no estar en blanco` |
+| Subject de otro usuario o intento de sobrescribir/reasignar | `BAD_REQUEST`: `La identidad de usuario ya está vinculada` |
+| Conflicto concurrente de unicidad | `BAD_REQUEST`: `El registro viola una restricción de unicidad o integridad` |
+
+Los errores GraphQL usan HTTP 200 con `errors`; los rechazos no alteran enlaces ni auditoría.
+No hay fallback por username/email, UUID supuesto ni escritura durante la consulta.
+
+**Secuencia para odontólogos:** usar directamente el aprovisionador pareado
+`vincularIdentidadOdontologo` descrito abajo. Vincular primero solo el usuario deja un enlace
+parcial que el aprovisionador pareado **rechaza intencionalmente**, aunque el subject coincida.
+Esta API no relaja ni repara esa limitación. Un usuario ya aprovisionado por la operación
+pareada sí puede consultar su usuario ERP con ADMIN/CAJERO y repetir el enlace de usuario exacto.
+
+**Límite financiero:** las mutaciones financieras existentes siguen recibiendo
+`usuarioCajeroId` del cliente. Esta consulta permite obtener un ID canónico, pero no cambia
+ni resuelve la autorización servidor de actuar en nombre de otro usuario. Cualquier nueva
+política self-only requiere un cambio explícito independiente.
 
 ## Identidad canónica del odontólogo
 

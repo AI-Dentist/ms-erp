@@ -2379,6 +2379,36 @@
           "isDeprecated" : false,
           "deprecationReason" : null
         }, {
+          "name" : "vincularIdentidadUsuario",
+          "description" : null,
+          "args" : [ {
+            "name" : "input",
+            "description" : null,
+            "type" : {
+              "kind" : "NON_NULL",
+              "name" : null,
+              "ofType" : {
+                "kind" : "INPUT_OBJECT",
+                "name" : "VincularIdentidadUsuarioInput",
+                "ofType" : null
+              }
+            },
+            "defaultValue" : null,
+            "isDeprecated" : false,
+            "deprecationReason" : null
+          } ],
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "UUID",
+              "ofType" : null
+            }
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
           "name" : "crearPaciente",
           "description" : null,
           "args" : [ {
@@ -3987,6 +4017,21 @@
           "isDeprecated" : false,
           "deprecationReason" : null
         }, {
+          "name" : "obtenerMiUsuarioId",
+          "description" : " ADMIN/CAJERO: exact verified JWT subject -> active ERP user, without a doctor dependency.",
+          "args" : [ ],
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "UUID",
+              "ofType" : null
+            }
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
           "name" : "listarRoles",
           "description" : null,
           "args" : [ ],
@@ -5326,6 +5371,46 @@
           "deprecationReason" : null
         }, {
           "name" : "odontologoId",
+          "description" : null,
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "UUID",
+              "ofType" : null
+            }
+          },
+          "defaultValue" : null,
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
+          "name" : "keycloakSubject",
+          "description" : null,
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "String",
+              "ofType" : null
+            }
+          },
+          "defaultValue" : null,
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        } ],
+        "interfaces" : null,
+        "enumValues" : null,
+        "possibleTypes" : null
+      }, {
+        "kind" : "INPUT_OBJECT",
+        "name" : "VincularIdentidadUsuarioInput",
+        "description" : "ADMIN user-only provisioning; opaque subject unchanged, nonblank, at most 100 Unicode code points.",
+        "isOneOf" : false,
+        "fields" : null,
+        "inputFields" : [ {
+          "name" : "usuarioId",
           "description" : null,
           "type" : {
             "kind" : "NON_NULL",
