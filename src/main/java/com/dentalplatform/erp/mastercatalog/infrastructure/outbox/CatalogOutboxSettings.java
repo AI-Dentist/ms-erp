@@ -1,24 +1,35 @@
 package com.dentalplatform.erp.mastercatalog.infrastructure.outbox;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** Hard limits keep a mistaken deployment setting from making broker outages hold DB locks indefinitely. */
 @Component
-public record CatalogOutboxSettings(int batchSize, long sendTimeoutMs, long initialBackoffMs, long maxBackoffMs) {
+public record CatalogOutboxSettings(int batchSize, long sendTimeoutMs, long initialBackoffMs, long maxBackoffMs,
+                                    int maxAttempts) {
+    @Autowired
     public CatalogOutboxSettings(
             @Value("${erp.catalog-outbox.batch-size:1}") int batchSize,
             @Value("${erp.catalog-outbox.send-timeout-ms:2000}") long sendTimeoutMs,
             @Value("${erp.catalog-outbox.initial-backoff-ms:1000}") long initialBackoffMs,
-            @Value("${erp.catalog-outbox.max-backoff-ms:300000}") long maxBackoffMs) {
+            @Value("${erp.catalog-outbox.max-backoff-ms:300000}") long maxBackoffMs,
+            @Value("${erp.catalog-outbox.max-attempts:5}") int maxAttempts) {
         if (batchSize < 1 || batchSize > 10 || sendTimeoutMs < 50 || sendTimeoutMs > 3000
-                || initialBackoffMs < 100 || maxBackoffMs < initialBackoffMs || maxBackoffMs > 86400000) {
+                || initialBackoffMs < 100 || maxBackoffMs < initialBackoffMs || maxBackoffMs > 86400000
+                || maxAttempts < 1 || maxAttempts > 10) {
             throw new IllegalArgumentException("Invalid catalog outbox limits; see docs/catalog-outbox.md");
         }
         this.batchSize = batchSize;
         this.sendTimeoutMs = sendTimeoutMs;
         this.initialBackoffMs = initialBackoffMs;
         this.maxBackoffMs = maxBackoffMs;
+        this.maxAttempts = maxAttempts;
+    }
+
+    /** Preserve existing programmatic construction with the deployment default attempt limit. */
+    public CatalogOutboxSettings(int batchSize, long sendTimeoutMs, long initialBackoffMs, long maxBackoffMs) {
+        this(batchSize, sendTimeoutMs, initialBackoffMs, maxBackoffMs, 5);
     }
 
     public long backoffMs(int attempts) {
