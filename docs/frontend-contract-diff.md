@@ -13,7 +13,7 @@ La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `P
 `crearUsuarioConIdentidad` añade una entrada ADMIN para crear usuario y enlazar el
 subject Keycloak existente, con `odontologoId` opcional para un odontólogo existente.
 Todo el ERP se confirma o revierte en una sola transacción; no crea cuentas Keycloak.
-El replay idéntico conserva UUID/auditorías; perfil, contraseña o asociación distintos
+El replay idéntico devuelve `Usuario!` con el mismo `id` y sin otra auditoría; perfil, contraseña o asociación distintos
 fallan sin sobrescribir. Los callers de aprovisionamiento deben migrar a esta entrada:
 las operaciones legacy independientes no hacen rollback de un request anterior.
 Ver [contrato y errores](ms1-integration.md#alta-atómica-de-usuario-e-identidad-admin).

@@ -330,7 +330,7 @@ serializa hasta commit, conservando el orden de bloqueo usuario→odontólogo.
 Restricciones únicas y actualizaciones condicionales protegen también las carreras
 contra las operaciones legacy, que no participan del nuevo bloqueo de subject.
 
-Un replay exacto sobre usuario activo devuelve el mismo UUID sin escrituras ni
+Un replay exacto sobre usuario activo devuelve `Usuario!` con el mismo `id`, sin escrituras ni
 otra auditoría: compara username/email normalizados, nombre recortado sin cambiar
 mayúsculas internas, rol exacto, contraseña verificada contra el hash existente y
 la misma asociación odontológica opcional. No se guarda contraseña en claro ni
