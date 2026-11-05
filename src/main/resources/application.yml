@@ -22,7 +22,7 @@ spring:
   rabbitmq:
     listener:
       simple:
-        # Failed saga deliveries are rejected to the configured DLX, never requeued forever.
+        # Billing saga: only poison goes to DLQ; technical/persistence failures explicitly request requeue.
         default-requeue-rejected: false
     host: ${ERP_RABBIT_HOST:localhost}
     port: ${ERP_RABBIT_PORT:5672}

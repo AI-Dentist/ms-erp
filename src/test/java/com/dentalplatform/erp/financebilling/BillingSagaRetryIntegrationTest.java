@@ -165,7 +165,8 @@ class BillingSagaRetryIntegrationTest extends IntegrationTestBase {
 
         assertDoesNotThrow(() -> deliver(message));
 
-        verify(processor, times(2)).ejecutar(any(ConsultaFinalizadaCommand.class));
+        // The saga guard now returns before conversion/processor invocation for an already billed consultation.
+        verify(processor).ejecutar(any(ConsultaFinalizadaCommand.class));
         assertThat(assertSinglePendingOrder(fixture)).isEqualTo(orderId);
         verifyNoInteractions(pause);
     }
