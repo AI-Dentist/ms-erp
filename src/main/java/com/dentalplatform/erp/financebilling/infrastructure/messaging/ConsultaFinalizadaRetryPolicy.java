@@ -23,19 +23,24 @@ public class ConsultaFinalizadaRetryPolicy {
     private final int maxAttempts;
     private final long initialDelay;
     private final long maxDelay;
+    private final long redeliveryDelay;
     private final LongConsumer pause;
 
     public ConsultaFinalizadaRetryPolicy(
             @Value("${erp.billing-saga.retry.max-attempts:3}") int maxAttempts,
             @Value("${erp.billing-saga.retry.initial-delay-ms:100}") long initialDelay,
             @Value("${erp.billing-saga.retry.max-delay-ms:2000}") long maxDelay,
+            @Value("${erp.billing-saga.retry.redelivery-delay-ms:1000}") long redeliveryDelay,
             @Qualifier("billingSagaRetryPause") LongConsumer pause) {
-        if (maxAttempts < 1 || initialDelay < 1 || maxDelay < initialDelay) {
-            throw new IllegalArgumentException("Billing saga retry requires positive attempts/delays and max-delay-ms >= initial-delay-ms");
+        if (maxAttempts < 2 || maxAttempts > 10 || initialDelay < 1 || maxDelay < initialDelay
+                || redeliveryDelay < 100 || redeliveryDelay > 30000) {
+            throw new IllegalArgumentException("Billing saga retry requires attempts 2..10, positive delays, "
+                    + "max-delay-ms >= initial-delay-ms and redelivery-delay-ms 100..30000");
         }
         this.maxAttempts = maxAttempts;
         this.initialDelay = initialDelay;
         this.maxDelay = maxDelay;
+        this.redeliveryDelay = redeliveryDelay;
         this.pause = pause;
     }
 
@@ -55,6 +60,18 @@ public class ConsultaFinalizadaRetryPolicy {
             pause.accept(delay);
             delay = delay >= maxDelay - delay ? maxDelay : delay * 2;
         }
+    }
+
+    boolean agotados(Throwable failure, int attempts) {
+        return !Thread.currentThread().isInterrupted() && attempts == maxAttempts && isTransient(failure);
+    }
+
+    long redeliveryDelayMs() { return redeliveryDelay; }
+
+    void pauseBeforeRedelivery() {
+        checkInterrupted();
+        pause.accept(redeliveryDelay);
+        checkInterrupted();
     }
 
     private static void checkInterrupted() {
