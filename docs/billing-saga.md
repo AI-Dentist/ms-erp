@@ -1,22 +1,19 @@
-# Billing saga: primera unidad de reintentos
+# Billing saga: base transaccional de rechazo
 
-**Estado actual: SOLO primera unidad.** Cubre el retry de S3/S9(1), no la aceptación de la saga completa.
-El listener anotado y su entrada tipada ejecutan cada intento mediante el proxy transaccional del caso de uso: el rollback termina antes del siguiente intento. No hay transacción exterior ni advice de contenedor; otros consumidores no cambian.
+La base ACID está disponible mediante `FacturacionSagaUseCase`; la entrada AMQP y la publicación se conectan en los siguientes slices. No es aceptación completa de T2 ni E2E.
 
-## Configuración
+## Slice A: base de rechazo y outbox
 
-| Propiedad (`erp.billing-saga.retry.*`) | Variable de entorno | Default |
-| --- | --- | --- |
-| `max-attempts` | `ERP_BILLING_SAGA_RETRY_MAX_ATTEMPTS` | 3 |
-| `initial-delay-ms` | `ERP_BILLING_SAGA_RETRY_INITIAL_DELAY_MS` | 100 |
-| `max-delay-ms` | `ERP_BILLING_SAGA_RETRY_MAX_DELAY_MS` | 2000 |
+`FacturacionSagaUseCase.procesar` adquiere el lock de consulta existente y comprueba orden/rechazo antes de evaluar el supplier. El lock permanece en la misma transacción que el procesador existente. Un comando con consultaId distinto del bloqueado es PAYLOAD_INVALIDO. Una consulta facturada no se rechaza; un cierre rechazado no se factura después.
 
-`max-attempts` incluye el primer intento. Antes del reintento n (n=1 para el primero), pausa `min(max-delay-ms, initial-delay-ms * 2^(n-1))`, con duplicación sin overflow. No hay pausa tras el último intento ni ante errores permanentes. Valores no positivos o máximo menor que inicial impiden el arranque. El bean `billingSagaRetryPause` (`LongConsumer`) realiza el sleep y puede sustituirse en tests; una interrupción conserva el flag y solicita requeue, sin continuar el bucle.
+Los códigos definitivos son PACIENTE_INEXISTENTE, ODONTOLOGO_INEXISTENTE (solo si se proporciona), SERVICIO_INEXISTENTE, SERVICIO_INACTIVO, MONTO_INVALIDO y PAYLOAD_INVALIDO. Se preservan paciente inactivo, odontólogo opcional y redondeo HALF_UP de Money: -0.004 se acepta como cero; -0.005 se rechaza.
 
-La lista conservadora admite errores Spring de acceso transitorio/recuperable o recurso DB, sockets y conexión/IO AMQP; también SQL transitorio/recuperable o estados `08*`, `40001`, `40P01`, `55P03`, `57P03`. Un fallo al crear transacción necesita una causa de recurso/conexión reconocida. Se recorren como máximo 32 causas; cadenas incompletas, reglas de negocio, argumentos inválidos y SQL permanente no se reintentan. Otros errores no se consideran transitorios por defecto. No se registran mensajes de excepción ni datos del payload.
+`registrarRechazo` usa una transacción nueva tras rollback, readquiere el lock y vuelve a comprobar la orden. `rechazos_facturacion` ES el rechazo durable y su outbox: event_id propio, consulta_id, consulta_finalizada_event_id único, motivo_codigo, motivo fijo sin datos personales y rechazada_en. Nace PENDIENTE con attempts=0; dispone de next_attempt_at, last_error/sent_at y estados ENVIADO/FALLIDO para el futuro dispatcher. No hay FK al MS2 ni deduplicación global por consultaId.
+
+Solo una inserción nueva registra FACTURACION_CONSULTA_RECHAZADA mediante el caso de uso de auditoría, en la misma transacción. Operadores pueden consultar `listarAuditLogs`: entidadAfectada=rechazos_facturacion, entidadId=eventId de compensación y detalle con consultaId, consultaFinalizadaEventId y motivoCodigo. Duplicados no añaden auditorías. Un fallo de auditoría revierte también el rechazo/outbox.
 
 ## Verificación y límites
 
-Prueba enfocada: `./mvnw -Dtest=BillingSagaRetryIntegrationTest test`. Se observó RED (6 casos, 3 fallos de aserción, 0 errores) antes de producción; luego GREEN 6/6 y suite predeterminada 596/596, sin fallos, errores ni omisiones. Los casos prueban el adaptador público, recuperación, límite/backoff y controles previos; no prueban todavía todas las categorías, configuración inválida, interrupciones ni rollback de escrituras parciales. La revisión independiente de fuente no encontró bloqueos, pero su ejecución funcional no estuvo disponible. Ese corte documentado permite avanzar el slice; no certifica la saga completa ni E2E.
+Prueba de la base: `./mvnw -Dtest=BillingRejectionLedgerIntegrationTest test`. Sus cuatro casos públicos verificaron identidad/dedupe, guarda previa a conversión, rollback de rechazo y auditoría y correspondencia con la consulta bloqueada. Las pruebas de entrada AMQP se incorporan en el siguiente slice.
 
-Al agotarse los intentos se propaga la excepción original. **Pendientes:** rechazo definitivo y `REINTENTOS_AGOTADOS` con outbox atómico, correlación, idempotencia de compensación y DLQ exclusiva para mensajes ilegibles. La configuración global de reject/requeue no cambia: aún puede enviar fallos agotados a DLQ sin compensación. No se aporta prueba de broker real, ACK/requeue/DLQ en el wire ni aceptación de producción.
+La revisión independiente de fuente no encontró bloqueos; su ejecución funcional no estuvo disponible. No se afirma publicación, límite terminal ni compensación por agotamiento. No hay cambios a catálogos, identidad, PDF ni proveedores externos.
