@@ -23,6 +23,20 @@ public final class MinioReceiptStorageAdapter implements ReceiptStoragePort {
     private String key(UUID id) { return Objects.requireNonNull(id) + ".pdf"; }
     private String reference(UUID id) { return "s3://" + bucket + "/" + key(id); }
 
+    @Override public String referencia(UUID reciboId) { return reference(reciboId); }
+
+    @Override public boolean existe(UUID reciboId) {
+        try {
+            client.statObject(StatObjectArgs.builder().bucket(bucket).object(key(reciboId)).build());
+            return true;
+        } catch (io.minio.errors.ErrorResponseException e) {
+            if (e.response() != null && e.response().code() == 404) return false;
+            throw new IllegalStateException("No se pudo verificar el PDF del recibo");
+        } catch (Exception e) {
+            throw new IllegalStateException("No se pudo verificar el PDF del recibo");
+        }
+    }
+
     @Override public String guardar(UUID reciboId, byte[] pdf) {
         try {
             client.putObject(PutObjectArgs.builder().bucket(bucket).object(key(reciboId))

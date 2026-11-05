@@ -80,6 +80,7 @@ class OfflineReplayHttpIntegrationTest extends IntegrationTestBase {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity())
                 .addFilter(idempotencyFilter.getFilter(), "/graphql").build();
         when(pdf.generar(any())).thenReturn(new byte[]{1});
+        when(storage.referencia(any())).thenReturn("file:///offline-replay/receipt.pdf");
         when(storage.guardar(any(), any())).thenReturn("file:///offline-replay/receipt.pdf");
     }
 
@@ -109,7 +110,8 @@ class OfflineReplayHttpIntegrationTest extends IntegrationTestBase {
                 Map.entry("ordenes.PENDIENTE", d("-1")), Map.entry("ordenes.PAGADO", d("1")),
                 Map.entry("saldoSum", d("-1000")), Map.entry("movimientos", d("1")),
                 Map.entry("ingresosSum", d("1000")), Map.entry("recibos", d("1")), Map.entry("reciboSeq", d("1")),
-                Map.entry("audit", d("1")), Map.entry("idempotency", d("1"))));
+                // CUOTA_COBRADA plus the receipt PDF ownership reservation, each exactly once.
+                Map.entry("audit", d("2")), Map.entry("idempotency", d("1"))));
         assertThat(first.data("cobrarCuotaEnEfectivo").path("numeroRecibo").asString()).matches("REC-\\d{4}-\\d{6,}");
     }
 
@@ -585,7 +587,8 @@ class OfflineReplayHttpIntegrationTest extends IntegrationTestBase {
                 Map.entry("ordenes.PENDIENTE", d("-1")), Map.entry(toOrder, d("1")),
                 Map.entry("saldoSum", d(amount).negate()), Map.entry("movimientos", d("1")),
                 Map.entry("ingresosSum", d(amount)), Map.entry("recibos", d("1")), Map.entry("reciboSeq", d("1")),
-                Map.entry("audit", d("1")), Map.entry("idempotency", d("1")));
+                // CUOTA_COBRADA plus the receipt PDF ownership reservation, each exactly once.
+                Map.entry("audit", d("2")), Map.entry("idempotency", d("1")));
     }
 
     /** Counts and sums of every table a replayed mutation could touch, including the receipt sequence. */

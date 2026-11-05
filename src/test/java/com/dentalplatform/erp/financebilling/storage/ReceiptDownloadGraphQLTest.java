@@ -39,7 +39,7 @@ class ReceiptDownloadGraphQLTest extends IntegrationTestBase {
     void fieldAuthorizationAlsoRejectsDirectConstructedReceipt() {
         var receipt = new Recibo(UUID.randomUUID(), UUID.randomUUID(), "test", "123", "Prueba", "Prueba",
                 Money.of("10"), "s3://private-receipts/forged.pdf", false, OffsetDateTime.now());
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> downloads.pdfUrlS3(receipt))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> downloads.pdfUrlS3(receipt, null))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
     @Test @WithMockUser(roles = "ADMIN")

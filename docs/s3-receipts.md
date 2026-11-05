@@ -64,7 +64,17 @@ Property names keep the historical `erp.receipts.minio.*` prefix for backward co
 
 ## Failure boundary
 
-Payment, installment, balance and cash movement commit before PDF generation. A PDF or storage failure leaves the payment committed and `pdf_url_s3` null, with no durable automatic retry: do not repeat the payment to repair a PDF. A crash between upload and reference persistence can leave an unreferenced object.
+Payment, installment, balance and cash movement commit before PDF generation. A PDF or storage failure leaves the payment committed and `pdf_url_s3` null, with no durable automatic retry: do not repeat the payment to repair a PDF.
+
+Every uploaded object has a durable owner, even when it is never linked to its receipt. After the PDF is generated, three steps run in order, each in its own transaction; the upload is in none of them:
+
+1. **Reserve:** commit an ADMIN-visible audit entry `RECIBO_PDF_RESERVADO` (`entidadAfectada = recibos`, `entidadId` = receipt UUID, `detalleJson.referencia` = the exact `s3://bucket/<receipt-UUID>.pdf` key). Adapters compute this key without storage I/O (`ReceiptStoragePort.referencia`); an adapter that cannot name it uploads nothing.
+2. **Upload** the object. The returned reference must equal the reserved one, otherwise nothing is linked.
+3. **Link:** store the reference in `pdf_url_s3`, which enables the signed download.
+
+If the link fails, its transaction does not commit, or the process stops after the upload, the object is initially referenced by the step 1 audit entry and `pdfUrlS3` stays null. A later ADMIN/CAJERO **query** requesting `Recibo.pdfUrlS3` retries the link on demand: it validates that the reservation exactly matches the adapter's UUID-derived key, checks existence with S3 HEAD (or a local file check), then links that same reference in a separate transaction. It performs **no PUT**, creates no second object and does not repeat the payment. Concurrent/repeated repairs serialize on the receipt and preserve the existing link; a successful repair writes one `RECIBO_PDF_REPARADO` audit entry atomically with the link. Initial mutation responses retain the original receipt snapshot, without initiating a repair.
+
+If the object is absent, storage is unavailable or linking still fails, the optional download stays null; the reservation remains available for another request. No background repair runs and no object is deleted. HEAD uses the existing `s3:GetObject` permission; IAM is unchanged and still needs no `s3:DeleteObject`. A reservation alone does not prove the object exists. Operators find pending artifacts as `RECIBO_PDF_RESERVADO` entries whose receipt has `pdfUrlS3 = null`; retain these ownership entries for the lifetime of their objects. `listarAuditLogs` shows only the latest 500 entries, so use the audit table for complete reconciliation.
 
 ## Production note
 

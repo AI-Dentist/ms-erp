@@ -57,8 +57,10 @@ class MinioReceiptStorageTest {
         assertThat(paths).isEmpty();
         UUID id = UUID.randomUUID();
         byte[] bytes = "%PDF-1.7\nprivate receipt".getBytes();
+        assertThat(storage.referencia(id)).isEqualTo("s3://private-receipts/" + id + ".pdf");
+        assertThat(paths).as("reference is computed without storage I/O").isEmpty();
         String ref = storage.guardar(id, bytes);
-        assertThat(ref).isEqualTo("s3://private-receipts/" + id + ".pdf");
+        assertThat(ref).isEqualTo(storage.referencia(id));
         assertThat(storage.guardar(id, bytes)).isEqualTo(ref);
         assertThat(paths).containsExactly("PUT /private-receipts/" + id + ".pdf", "PUT /private-receipts/" + id + ".pdf");
         assertThat(types).containsExactly("application/pdf", "application/pdf");
@@ -122,7 +124,9 @@ class MinioReceiptStorageTest {
         var storage = new ReceiptStorageConfig().receiptStorage(new ReceiptStorageConfig.Settings("local", directory.toString(), null));
         UUID id = UUID.randomUUID();
         byte[] pdf = {37, 80, 68, 70};
+        String reserved = storage.referencia(id);
         String reference = storage.guardar(id, pdf);
+        assertThat(reference).isEqualTo(reserved);
         assertThat(Files.readAllBytes(Path.of(URI.create(reference)))).isEqualTo(pdf);
         assertThat(storage.resolverDescarga(id, reference)).isEqualTo(reference);
         assertThatThrownBy(() -> storage.resolverDescarga(UUID.randomUUID(), reference)).isInstanceOf(IllegalArgumentException.class);
