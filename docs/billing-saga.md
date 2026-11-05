@@ -1,6 +1,6 @@
 # Saga de facturación: rechazo durable y compensación
 
-**Entrada y rechazo durable verificados localmente.** La publicación se incorpora en el siguiente slice; no es aceptación E2E.
+**Entrada durable y emisor confirmado verificados localmente.** El dispatcher se conecta en el siguiente slice; no es aceptación E2E.
 
 ## Entrada y rechazo durable
 
@@ -33,6 +33,28 @@ Prefijo `erp.billing-saga.retry.`:
 
 El backoff de negocio duplica el inicial hasta el máximo, sin overflow; no hay pausa tras el último intento ni retry de negocio ante un rechazo definitivo. La espera de redelivery es adicional cuando no se puede confirmar el rechazo durable o el fallo técnico no está clasificado.
 
+## Emisor confirmado
+
+`ConfirmedBillingRejectionSender` publica bytes JSON persistentes con eventId estable como messageId/correlación. Solo ACK sin retorno es éxito; NACK, retorno, timeout o fallo AMQP confirmado excepcionalmente no lo son. El worker y su cola son acotados, el deadline cubre envío y confirmación, y los wrappers de futures se desenvuelven con límite. Errores de programación no se convierten en fallos de broker. No se envía SQL al worker.
+
+Las seis variantes del test público del emisor corroboran estas reglas sin base ni broker real. Los parámetros de despacho siguientes se consumen al conectar el dispatcher en el próximo slice.
+
+### Configuración del outbox
+
+Prefijo `erp.billing-saga.outbox.`; variables `ERP_BILLING_SAGA_OUTBOX_<SUFIJO>`:
+
+| Propiedad / sufijo | Default / límite |
+| --- | --- |
+| `enabled` / `ENABLED` | true |
+| `max-attempts` / `MAX_ATTEMPTS` | 5; 1..10 |
+| `batch-size` / `BATCH_SIZE` | 1; 1..10 |
+| `send-timeout-ms` / `SEND_TIMEOUT_MS` | 2000; 50..3000 |
+| `initial-backoff-ms` / `INITIAL_BACKOFF_MS` | 1000; mínimo 10 |
+| `max-backoff-ms` / `MAX_BACKOFF_MS` | 300000; no menor al inicial, máximo 86400000 |
+| `poll-delay-ms` / `POLL_DELAY_MS` | 1000; 50..60000 |
+
+Routing: `erp.messaging.facturacion-rechazada-routing-key`, variable `ERP_BILLING_SAGA_REJECTED_ROUTING_KEY`, default `facturacion.consulta.rechazada`.
+
 ## Verificación y límites
 
-El conjunto local pasó 49/49 pruebas enfocadas y 639/639 de suite. Las pruebas de entrada incluyen agotamiento, fallo de persistencia con cooldown/ERROR sin datos personales y carrera cierre A/cierre B; las revisiones de fuente no encontraron bloqueos. Los resultados del conjunto también incluyen el emisor/dispatcher del siguiente slice. No se atribuyen como ejecución independiente ni broker wire/E2E.
+El conjunto de trabajo pasó 49/49 enfocadas y 639/639 de suite; incluye dispatcher del próximo slice. Revisiones de fuente sin bloqueos; ejecución independiente/wire/E2E no disponibles. El emisor no marca por sí mismo filas como ENVIADO/FALLIDO: eso corresponde al dispatcher transaccional.

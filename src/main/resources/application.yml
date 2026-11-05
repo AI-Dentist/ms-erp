@@ -70,6 +70,14 @@ erp:
       initial-delay-ms: ${ERP_BILLING_SAGA_RETRY_INITIAL_DELAY_MS:100}
       max-delay-ms: ${ERP_BILLING_SAGA_RETRY_MAX_DELAY_MS:2000}
       redelivery-delay-ms: ${ERP_BILLING_SAGA_RETRY_REDELIVERY_DELAY_MS:1000}
+    outbox:
+      enabled: ${ERP_BILLING_SAGA_OUTBOX_ENABLED:true}
+      max-attempts: ${ERP_BILLING_SAGA_OUTBOX_MAX_ATTEMPTS:5}
+      batch-size: ${ERP_BILLING_SAGA_OUTBOX_BATCH_SIZE:1}
+      send-timeout-ms: ${ERP_BILLING_SAGA_OUTBOX_SEND_TIMEOUT_MS:2000}
+      initial-backoff-ms: ${ERP_BILLING_SAGA_OUTBOX_INITIAL_BACKOFF_MS:1000}
+      max-backoff-ms: ${ERP_BILLING_SAGA_OUTBOX_MAX_BACKOFF_MS:300000}
+      poll-delay-ms: ${ERP_BILLING_SAGA_OUTBOX_POLL_DELAY_MS:1000}
   cors:
     # Explicit origins only (never '*'). Empty = CORS disabled, no Access-Control-* headers are emitted.
     allowed-origins: ${ERP_CORS_ALLOWED_ORIGINS:}
@@ -84,6 +92,7 @@ erp:
     exchange: dental.topic.exchange
     consulta-finalizada-queue: erp.consulta.finalizada.queue
     consulta-finalizada-routing-key: clinica.consulta.finalizada
+    facturacion-rechazada-routing-key: ${ERP_BILLING_SAGA_REJECTED_ROUTING_KEY:facturacion.consulta.rechazada}
     dead-letter-exchange: dental.dlx.exchange
     consulta-finalizada-dlq: erp.consulta.finalizada.dlq
   idempotency:
