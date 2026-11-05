@@ -64,6 +64,11 @@ management:
         include: health,info
 
 erp:
+  billing-saga:
+    retry:
+      max-attempts: ${ERP_BILLING_SAGA_RETRY_MAX_ATTEMPTS:3}
+      initial-delay-ms: ${ERP_BILLING_SAGA_RETRY_INITIAL_DELAY_MS:100}
+      max-delay-ms: ${ERP_BILLING_SAGA_RETRY_MAX_DELAY_MS:2000}
   cors:
     # Explicit origins only (never '*'). Empty = CORS disabled, no Access-Control-* headers are emitted.
     allowed-origins: ${ERP_CORS_ALLOWED_ORIGINS:}
