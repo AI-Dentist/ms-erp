@@ -29,6 +29,8 @@ type Query {
 type Mutation {
     actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
     crearUsuario(input: CrearUsuarioInput!): Usuario!
+    "ADMIN: atomically create an ERP user, bind an existing Keycloak subject and optionally an existing dentist."
+    crearUsuarioConIdentidad(input: CrearUsuarioConIdentidadInput!): Usuario!
     vincularIdentidadUsuario(input: VincularIdentidadUsuarioInput!): UUID!
     crearPaciente(input: CrearPacienteInput!): Paciente!
     crearEspecialidad(codigo: String!, nombre: String!, descripcion: String): Especialidad!
@@ -245,6 +247,13 @@ input CrearUsuarioInput {
     email: String!
     nombreCompleto: String!
     password: String!
+}
+
+"Exact active replay is read-only; conflicting profile, credentials or dentist cannot overwrite an existing identity."
+input CrearUsuarioConIdentidadInput {
+    usuario: CrearUsuarioInput!
+    keycloakSubject: String!
+    odontologoId: UUID
 }
 
 "ADMIN user-only provisioning; opaque subject unchanged, nonblank, at most 100 Unicode code points."

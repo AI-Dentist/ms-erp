@@ -103,6 +103,8 @@ type Mutation {
   crearPaciente(input: CrearPacienteInput!): Paciente!
   crearServicioOdontologico(input: CrearServicioInput!): ServicioOdontologico!
   crearUsuario(input: CrearUsuarioInput!): Usuario!
+  "ADMIN: atomically create an ERP user, bind an existing Keycloak subject and optionally an existing dentist."
+  crearUsuarioConIdentidad(input: CrearUsuarioConIdentidadInput!): Usuario!
   ejecutarAgenteErp(instruccion: String!, modoAutonomoMonitoreo: Boolean = false): AgenteInteraccionResponse!
   eliminarConsultorio(id: UUID!): Boolean!
   eliminarEspecialidad(id: UUID!): Boolean!
@@ -408,6 +410,13 @@ input CrearServicioInput {
   especialidadId: UUID
   nombre: String!
   precioBaseBs: BigDecimal!
+}
+
+"Exact active replay is read-only; conflicting profile, credentials or dentist cannot overwrite an existing identity."
+input CrearUsuarioConIdentidadInput {
+  keycloakSubject: String!
+  odontologoId: UUID
+  usuario: CrearUsuarioInput!
 }
 
 input CrearUsuarioInput {

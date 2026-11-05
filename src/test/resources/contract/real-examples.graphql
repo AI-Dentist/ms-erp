@@ -140,6 +140,14 @@ mutation ActualizarConfiguracionEmpresa($input: EmpresaConfigInput!) {
 }
 #@vars {"input": {"nombreComercial": "Sonrisa Dental", "razonSocial": "Sonrisa S.R.L.", "nit": "1023456029", "direccion": "Av. San Martin 155, Santa Cruz de la Sierra", "telefonoContacto": "+591 3 3412233", "emailContacto": "info@sonrisa.bo"}}
 
+#@ CrearUsuarioConIdentidad
+mutation CrearUsuarioConIdentidad($input: CrearUsuarioConIdentidadInput!) {
+  crearUsuarioConIdentidad(input: $input) {
+    id username email nombreCompleto activo rol { codigo }
+  }
+}
+#@vars {"input":{"usuario":{"rolCodigo":"CAJERO","username":"cajero-atomico","email":"cajero-atomico@example.test","nombreCompleto":"Cajero sintético","password":"Synthetic2026!"},"keycloakSubject":"synthetic:atomic-cashier"}}
+
 #@ CrearUsuario
 mutation CrearUsuario($input: CrearUsuarioInput!) {
   crearUsuario(input: $input) { id username email nombreCompleto activo rol { codigo } }

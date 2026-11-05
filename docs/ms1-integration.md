@@ -10,6 +10,7 @@ Las mutaciones se muestran como documentación: no ejecutarlas contra entornos c
 - [Pacientes: leer y escribir](#pacientes-leer-y-escribir)
 - [Otros catálogos, identidad y finanzas](#otros-catálogos-identidad-y-finanzas)
 - [Identidad canónica del usuario ERP](#identidad-canónica-del-usuario-erp)
+- [Alta atómica de usuario e identidad](#alta-atómica-de-usuario-e-identidad-admin)
 - [Identidad canónica del odontólogo](#identidad-canónica-del-odontólogo)
 - [RabbitMQ: sincronización y consulta finalizada](#rabbitmq-sincronización-y-consulta-finalizada)
 - [MCP, REST e idempotencia](#mcp-rest-e-idempotencia)
@@ -292,6 +293,59 @@ pareada sí puede consultar su usuario ERP con ADMIN/CAJERO y repetir el enlace 
 `usuarioCajeroId` del cliente. Esta consulta permite obtener un ID canónico, pero no cambia
 ni resuelve la autorización servidor de actuar en nombre de otro usuario. Cualquier nueva
 política self-only requiere un cambio explícito independiente.
+
+## Alta atómica de usuario e identidad (ADMIN)
+
+Para **crear un usuario nuevo y vincularlo**, usar
+`crearUsuarioConIdentidad(input: CrearUsuarioConIdentidadInput!): Usuario!`.
+La cuenta Keycloak debe existir previamente: el ERP no crea cuentas ni llama al
+proveedor. El subject se confirma con una fuente de confianza; no se deduce por email.
+
+```graphql
+mutation CrearUsuarioConIdentidad($input: CrearUsuarioConIdentidadInput!) {
+  crearUsuarioConIdentidad(input: $input) {
+    id username email nombreCompleto activo rol { codigo }
+  }
+}
+```
+
+Variables:
+
+```json
+{"input":{"usuario":{"rolCodigo":"CAJERO","username":"cajero-atomico","email":"cajero-atomico@example.test","nombreCompleto":"Cajero sintético","password":"Synthetic2026!"},"keycloakSubject":"synthetic:atomic-cashier"}}
+```
+
+Los valores son sintéticos; no registrar contraseñas ni variables de producción.
+
+El input contiene `usuario: CrearUsuarioInput!`, `keycloakSubject: String!` y
+`odontologoId: UUID` opcional. Para asociar un odontólogo **existente, activo y sin
+enlace**, enviar su UUID en el mismo input. No vincular primero solo el usuario:
+el helper odontológico sigue rechazando enlaces parciales. No se crea ni recrea
+al odontólogo, ni se añade una restricción de coincidencia entre rol ERP y rol JWT.
+
+Creación, enlace(s) y auditorías comparten una sola transacción local. Si falla
+cualquier paso, tampoco queda el usuario recién creado; el mismo input puede
+reintentarse tras recuperarse la dependencia. La reclamación del subject se
+serializa hasta commit, conservando el orden de bloqueo usuario→odontólogo.
+Restricciones únicas y actualizaciones condicionales protegen también las carreras
+contra las operaciones legacy, que no participan del nuevo bloqueo de subject.
+
+Un replay exacto sobre usuario activo devuelve el mismo UUID sin escrituras ni
+otra auditoría: compara username/email normalizados, nombre recortado sin cambiar
+mayúsculas internas, rol exacto, contraseña verificada contra el hash existente y
+la misma asociación odontológica opcional. No se guarda contraseña en claro ni
+huella del request. Cambiar perfil, contraseña o asociación devuelve
+`BAD_REQUEST: La identidad de usuario ya está vinculada`, sin sobrescribir.
+UUID odontológico inexistente/inactivo/conflictivo conserva los errores del enlace
+existente; rol no ADMIN devuelve `FORBIDDEN`. Subject opaco: no blanco, hasta
+100 puntos de código Unicode, sin trim ni cambio de mayúsculas.
+No adopta usuarios legacy por coincidencia de username/email ni repara enlaces parciales.
+
+**Migración del caller:** `crearUsuario` y `vincularIdentidad*` siguen disponibles
+como operaciones independientes compatibles. Dos requests separados **no** son
+atómicos: una creación confirmada antes de un enlace fallido permanece. El caller
+de aprovisionamiento debe adoptar esta nueva mutación; no se promete rollback
+retroactivo ni una transacción distribuida con Keycloak.
 
 ## Identidad canónica del odontólogo
 
