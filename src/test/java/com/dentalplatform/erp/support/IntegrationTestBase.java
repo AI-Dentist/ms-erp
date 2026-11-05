@@ -46,6 +46,7 @@ public abstract class IntegrationTestBase {
         registry.add("spring.datasource.password", () -> "postgres");
         registry.add("erp.security.dev-mode", () -> "true");
         registry.add("erp.catalog-outbox.enabled", () -> "false");
+        registry.add("erp.billing-saga.outbox.enabled", () -> "false");
         registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
         registry.add("spring.rabbitmq.listener.direct.auto-startup", () -> "false");
     }
