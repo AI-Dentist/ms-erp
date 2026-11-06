@@ -66,8 +66,17 @@ metadata only. Eight new public HTTP/JWT/PostgreSQL intent cases and 46 focused
 regressions passed (54 total), including same-actor retry after a new login 48 hours
 later. `PREPARED` is metadata, never patient registration or a payment. It checks the frozen canonical hash and never
 overwrites a previous actor/operation identity on payload/type conflict.
-Patient execution, `CONFIRMED` business receipts and all financial handlers remain
-unavailable; clients must retain `PREPARED` entries as pending.
+Patient execution and its `CONFIRMED` receipt passed 19 owner focused HTTP/JWT/
+PostgreSQL cases (11 patient and 8 injected-failure intent cases), then all 65 scoped
+checks passed (61 HTTP/JWT/PostgreSQL plus four deterministic codec tests).
+These verify demographic/ID mapping, current permissions, replay after a new login,
+concurrent operation/CI uniqueness and rollback after outbox/confirmation writes.
+This is not independent review or financial-handler proof.
+The facade commits reservation first, then invokes the existing patient use case
+and stores patient-ID mapping plus confirmation in the same business transaction.
+Recovery records rejection/retry metadata only after that transaction rolls back.
+Only a committed `CONFIRMED` result means registered; keep `PREPARED` pending.
+Manual-order and financial handlers remain unavailable (reservation metadata only).
 Independent verification and business-transaction integration remain pending. Preparation errors use GraphQL `extensions.code`:
 `ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
 Confirmation additionally classifies failures as `FRESH_LOGIN_REQUIRED`,

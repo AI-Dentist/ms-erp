@@ -1,6 +1,13 @@
 package com.dentalplatform.erp.offline;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.dao.TransientDataAccessResourceException;
+import com.dentalplatform.erp.mastercatalog.application.port.CatalogEventPublisherPort;
+import com.dentalplatform.erp.mastercatalog.domain.event.PacienteCreadoEvent;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.isA;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.JsonNode;
@@ -13,6 +20,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class OfflineOperationIntentHttpTest extends OfflineOperationHttpTestSupport {
+    @MockitoSpyBean CatalogEventPublisherPort events;
+
+    @BeforeEach
+    void failAfterTheRealTransactionalOutboxInsert() {
+        doAnswer(call -> {
+            call.callRealMethod();
+            throw new TransientDataAccessResourceException("Synthetic failure after catalog outbox insertion");
+        }).when(events).publicar(isA(PacienteCreadoEvent.class));
+    }
     static final String FIELDS = "operationId type state payloadHash reasonCode confirmedAt result { patientId }";
     static final String SYNC = "mutation($input:OfflineOperationInput!){sincronizarOperacionOffline(input:$input){"
             + FIELDS + "}}";
@@ -50,7 +66,8 @@ class OfflineOperationIntentHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(prepared.path("state").asText()).isEqualTo("PREPARED");
         assertThat(prepared.path("payloadHash").asText())
                 .isEqualTo("1b4c2532beb6b051ee3725959694e4c5c8e375591dc010b91ca3cb939333bb1f");
-        for (String field : new String[]{"reasonCode", "confirmedAt", "result"}) {
+        assertThat(prepared.path("reasonCode").asText()).isEqualTo("TECHNICAL_RETRY_REQUIRED");
+        for (String field : new String[]{"confirmedAt", "result"}) {
             assertThat(prepared.path(field).isNull()).as(field).isTrue();
         }
         assertThat(sync(session, input(session, op, patient()))).isEqualTo(prepared);

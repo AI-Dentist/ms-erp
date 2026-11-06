@@ -42,6 +42,36 @@ public class JdbcOfflineOperationStore implements OfflineOperationStore {
     }
 
     @Override
+    public Optional<Header> lockForExecution(UUID actorId, UUID operationId) {
+        return jdbc.query("""
+                SELECT identity_issuer, identity_subject, operation_type, payload_hash
+                FROM offline_operation_receipts WHERE actor_id = ? AND operation_id = ? FOR UPDATE
+                """, (rs, row) -> new Header(rs.getString("identity_issuer"), rs.getString("identity_subject"),
+                OfflineOperationReceipt.Type.valueOf(rs.getString("operation_type")), rs.getString("payload_hash")),
+                actorId, operationId).stream().findFirst();
+    }
+
+    @Override
+    public void confirm(UUID actorId, UUID operationId, OfflineOperationReceipt.Result result, OffsetDateTime at) {
+        int changed = jdbc.update("""
+                UPDATE offline_operation_receipts
+                SET state = 'CONFIRMED', result_json = CAST(? AS JSONB), confirmed_at = ?, reason_code = NULL
+                WHERE actor_id = ? AND operation_id = ? AND state IN ('PREPARED', 'BLOCKED')
+                """, JSON.writeValueAsString(result), at, actorId, operationId);
+        if (changed != 1) throw new IllegalStateException("Offline confirmation lost its locked intent");
+    }
+
+    @Override
+    public void failure(UUID actorId, UUID operationId, String reason, OfflineOperationReceipt.State state) {
+        if (state != OfflineOperationReceipt.State.PREPARED && state != OfflineOperationReceipt.State.CONFLICT
+                && state != OfflineOperationReceipt.State.BLOCKED) throw new IllegalArgumentException("Invalid failure state");
+        jdbc.update("""
+                UPDATE offline_operation_receipts SET state = ?, reason_code = ?, result_json = NULL, confirmed_at = NULL
+                WHERE actor_id = ? AND operation_id = ? AND state <> 'CONFIRMED'
+                """, state.name(), reason, actorId, operationId);
+    }
+
+    @Override
     public Optional<OfflineOperationReceipt> receipt(UUID actorId, UUID operationId) {
         return jdbc.query("""
                 SELECT operation_type, state, payload_hash, reason_code, confirmed_at, result_json
