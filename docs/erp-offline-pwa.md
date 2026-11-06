@@ -227,6 +227,17 @@ trailing zeros removed (zero `"0"`, no rounding). Session/token/request projecti
 headers and auth timestamps are **not** part of the payload. Unknown fields fail
 GraphQL validation. A new login/session must not change an intent's hash.
 
+Version-one patient interoperability vector (minified UTF-8, no trailing newline):
+```json
+{"payload":{"apellidos":"Munoz","ciNit":"SYN-1","direccion":null,"email":null,"fechaNacimiento":null,"genero":null,"nombres":" Ana ","telefonoWhatsapp":"+59170012345"},"type":"PATIENT_CREATE","v":1}
+```
+SHA-256: `1b4c2532beb6b051ee3725959694e4c5c8e375591dc010b91ca3cb939333bb1f`.
+The root keys are sorted too; array ordering and string whitespace remain intact.
+The typed codec accepts exact decimal/string/integer representations, never binary
+float rounding. It rejects unsupported input with `INVALID_INPUT`; decimal
+precision or absolute scale above 1000 is rejected before exponent expansion.
+These helper limits do not replace the business cases' monetary validation.
+
 Unique durable key is canonical ERP actor UUID + operation UUID. Also pin original
 issuer/subject, operation type, canonical version and hash. Different type/payload
 or changed identity linkage conflicts; never overwrite/reassign or generate another
