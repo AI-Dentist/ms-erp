@@ -98,9 +98,13 @@ final class OfflineSyncHttpSupport {
     record Identity(String id, String username, String subject) { }
 
     static Identity createAdmin(int port) throws Exception {
+        return createUser(port, "ADMIN");
+    }
+
+    static Identity createUser(int port, String role) throws Exception {
         String username = "sync-" + UUID.randomUUID().toString().substring(0, 18);
         String subject = "sync-subject-" + UUID.randomUUID();
-        Map<String, Object> user = Map.of("rolCodigo", "ADMIN", "username", username,
+        Map<String, Object> user = Map.of("rolCodigo", role, "username", username,
                 "email", username + "@example.test", "nombreCompleto", "Synthetic Sync User",
                 "password", "Synthetic2026!");
         String query = """
@@ -112,7 +116,7 @@ final class OfflineSyncHttpSupport {
                 "keycloakSubject", subject)), adminToken()).path("crearUsuarioConIdentidad");
         assertThat(created.path("username").asText()).isEqualTo(username);
         assertThat(created.path("activo").asBoolean()).isTrue();
-        assertThat(created.path("rol").path("codigo").asText()).isEqualTo("ADMIN");
+        assertThat(created.path("rol").path("codigo").asText()).isEqualTo(role);
         String id = created.path("id").asText();
         assertThat(UUID.fromString(id)).isNotNull();
         return new Identity(id, username, subject);
@@ -140,6 +144,11 @@ final class OfflineSyncHttpSupport {
         return token(identity.subject(), identity.username());
     }
 
+    static String token(Identity identity, String role) {
+        Instant now = Instant.now();
+        return token(identity.subject(), identity.username(), null, now.minusSeconds(5), now.plusSeconds(300), role);
+    }
+
     private static String adminToken() { return token("fixture-admin", "admin-scz"); }
 
     static String token(Identity identity, Object authTime, Instant issuedAt, Instant expiresAt) {
@@ -152,9 +161,13 @@ final class OfflineSyncHttpSupport {
     }
 
     private static String token(String subject, String username, Object authTime, Instant issuedAt, Instant expiresAt) {
+        return token(subject, username, authTime, issuedAt, expiresAt, "ADMIN");
+    }
+
+    private static String token(String subject, String username, Object authTime, Instant issuedAt, Instant expiresAt, String role) {
         try {
             var builder = new JWTClaimsSet.Builder().issuer(ISSUER).subject(subject).audience("ms-erp")
-                    .claim("preferred_username", username).claim("realm_access", Map.of("roles", List.of("ADMIN")))
+                    .claim("preferred_username", username).claim("realm_access", Map.of("roles", List.of(role)))
                     .issueTime(Date.from(issuedAt)).expirationTime(Date.from(expiresAt));
             if (authTime != null) builder.claim("auth_time", authTime);
             var claims = builder.build();

@@ -50,8 +50,13 @@ boundary only; final independent security/concurrency verification remains pendi
 For a selected new sync root, any `Idempotency-Key` (including blank) is rejected
 with HTTP 400 and JSON code `OFFLINE_LEGACY_KEY_NOT_ALLOWED`; mixed business roots
 are rejected with HTTP 400 and `OFFLINE_MIXED_OPERATION`. Do not send the legacy
-header with new sync roots. Session APIs, operation ledger and execution remain
-pending; this boundary does not make those APIs available.
+header with new sync roots. `prepararSyncOffline` passed five owner HTTP/JWT/
+PostgreSQL cases (all three roles, context, balance privacy and denials); the
+boundary regression passed 10/10 again. Both canonical schema exports passed.
+Its challenge is not execution authority. Confirmation, the operation ledger,
+status and execution remain unavailable; independent verification remains pending.
+Preparation errors use GraphQL `extensions.code`: `ACTOR_UNAVAILABLE`,
+`PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
 
 The following additive contract is published **before T4 source changes**. T3 at
 `fce174b` remains accepted and unchanged. Availability will be recorded per slice;

@@ -37,7 +37,24 @@ type JornadaOffline {
     clavePublicaSpki: String!
 }
 
+input PrepararSyncOfflineInput {
+    workspaceId: UUID!
+    deviceId: UUID!
+    expectedActorId: UUID!
+}
+
+type OfflineSyncChallenge {
+    sessionId: UUID!
+    actorId: UUID!
+    workspaceId: UUID!
+    deviceId: UUID!
+    reauthNotBefore: DateTime!
+    expiresAt: DateTime!
+    cashflowBalanceBs: BigDecimal
+}
+
 type Mutation {
+    prepararSyncOffline(input: PrepararSyncOfflineInput!): OfflineSyncChallenge!
     activarJornadaOffline(input: ActivarJornadaOfflineInput!): JornadaOffline!
     actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
     crearUsuario(input: CrearUsuarioInput!): Usuario!

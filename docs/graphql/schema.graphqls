@@ -118,6 +118,7 @@ type Mutation {
   eliminarPaciente(id: UUID!): Boolean!
   eliminarServicioOdontologico(id: UUID!): Boolean!
   generarQrPagoFacil(ciNitCliente: String!, cuotaId: UUID!, razonSocialCliente: String!): TransaccionQr!
+  prepararSyncOffline(input: PrepararSyncOfflineInput!): OfflineSyncChallenge!
   registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
   simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
   vincularIdentidadOdontologo(input: VincularIdentidadOdontologoInput!): UUID!
@@ -135,6 +136,16 @@ type Odontologo {
   nombres: String!
   porcentajeComision: BigDecimal!
   telefono: String!
+}
+
+type OfflineSyncChallenge {
+  actorId: UUID!
+  cashflowBalanceBs: BigDecimal
+  deviceId: UUID!
+  expiresAt: DateTime!
+  reauthNotBefore: DateTime!
+  sessionId: UUID!
+  workspaceId: UUID!
 }
 
 type OrdenCobro {
@@ -452,6 +463,12 @@ input OrdenCobroItemInput {
   cantidad: Int!
   piezaDental: String
   servicioId: UUID!
+}
+
+input PrepararSyncOfflineInput {
+  deviceId: UUID!
+  expectedActorId: UUID!
+  workspaceId: UUID!
 }
 
 input RegistrarEgresoInput {
