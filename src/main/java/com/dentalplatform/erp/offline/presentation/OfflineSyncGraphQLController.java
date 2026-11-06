@@ -3,6 +3,8 @@ package com.dentalplatform.erp.offline.presentation;
 import com.dentalplatform.erp.offline.application.ConfirmOfflineSyncUseCase;
 import com.dentalplatform.erp.offline.application.PrepareOfflineSyncUseCase;
 import com.dentalplatform.erp.offline.application.OfflineOperationStatusUseCase;
+import com.dentalplatform.erp.offline.application.OfflineOperationRequest;
+import com.dentalplatform.erp.offline.application.ReserveOfflineOperationUseCase;
 import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
 import graphql.GraphQLError;
@@ -23,12 +25,14 @@ public class OfflineSyncGraphQLController {
     private final PrepareOfflineSyncUseCase prepare;
     private final ConfirmOfflineSyncUseCase confirm;
     private final OfflineOperationStatusUseCase status;
+    private final ReserveOfflineOperationUseCase reserve;
 
     public OfflineSyncGraphQLController(PrepareOfflineSyncUseCase prepare, ConfirmOfflineSyncUseCase confirm,
-                                        OfflineOperationStatusUseCase status) {
+                                        OfflineOperationStatusUseCase status, ReserveOfflineOperationUseCase reserve) {
         this.prepare = prepare;
         this.confirm = confirm;
         this.status = status;
+        this.reserve = reserve;
     }
 
     public record PrepareInput(UUID workspaceId, UUID deviceId, UUID expectedActorId) { }
@@ -42,6 +46,11 @@ public class OfflineSyncGraphQLController {
     @MutationMapping
     public ConfirmOfflineSyncUseCase.ConfirmedSession confirmarSyncOffline(@Argument UUID sessionId) {
         return confirm.confirm(sessionId);
+    }
+
+    @MutationMapping
+    public OfflineOperationReceipt sincronizarOperacionOffline(@Argument OfflineOperationRequest input) {
+        return reserve.reserve(input);
     }
 
     @QueryMapping

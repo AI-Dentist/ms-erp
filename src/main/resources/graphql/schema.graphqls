@@ -64,6 +64,7 @@ type OfflineSyncSession {
 }
 
 type Mutation {
+    sincronizarOperacionOffline(input: OfflineOperationInput!): OfflineOperationReceipt!
     prepararSyncOffline(input: PrepararSyncOfflineInput!): OfflineSyncChallenge!
     confirmarSyncOffline(sessionId: UUID!): OfflineSyncSession!
     activarJornadaOffline(input: ActivarJornadaOfflineInput!): JornadaOffline!
@@ -498,3 +499,51 @@ type OfflineConfirmedResult {
     receiptId: UUID
 }
 type OfflineInstallmentId { number: Int!, id: UUID! }
+
+
+input OfflineOperationInput {
+    sessionId: UUID!
+    operationId: UUID!
+    type: OfflineOperationType!
+    cash: OfflineCashInput
+    expense: OfflineExpenseInput
+    order: OfflineOrderInput
+    patient: CrearPacienteInput
+}
+input OfflineReferenceInput {
+    id: UUID
+    operationId: UUID
+    installmentNumber: Int
+}
+input OfflineCashInput {
+    quota: OfflineReferenceInput!
+    expectedOrderState: EstadoOrdenCobro!
+    expectedQuotaState: EstadoCuota!
+    expectedOrderBalanceBs: BigDecimal!
+    expectedQuotaAmountBs: BigDecimal!
+    ciNitCliente: String!
+    razonSocialCliente: String!
+    requireOpenCashRegister: Boolean = false
+}
+input OfflineExpenseInput {
+    categoria: String!
+    metodoPago: MetodoPago!
+    montoBs: BigDecimal!
+    descripcion: String!
+    expectedCashflowBalanceBs: BigDecimal!
+    requireOpenCashRegister: Boolean = false
+}
+input OfflineOrderInput {
+    patient: OfflineReferenceInput!
+    odontologoId: UUID
+    items: [OfflineOrderItemInput!]!
+    descuentoBs: BigDecimal = 0
+    observaciones: String
+    expectedTotalBs: BigDecimal!
+}
+input OfflineOrderItemInput {
+    servicioId: UUID!
+    piezaDental: String
+    cantidad: Int!
+    expectedUnitPriceBs: BigDecimal!
+}

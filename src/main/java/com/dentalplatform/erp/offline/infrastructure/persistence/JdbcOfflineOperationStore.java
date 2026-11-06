@@ -20,13 +20,24 @@ public class JdbcOfflineOperationStore implements OfflineOperationStore {
     }
 
     @Override
+    public void reserve(UUID actorId, UUID operationId, String issuer, String subject,
+                        OfflineOperationReceipt.Type type, String payloadHash) {
+        jdbc.update("""
+                INSERT INTO offline_operation_receipts
+                    (actor_id, operation_id, identity_issuer, identity_subject, operation_type, payload_hash, state)
+                VALUES (?, ?, ?, ?, ?, ?, 'PREPARED')
+                ON CONFLICT (actor_id, operation_id) DO NOTHING
+                """, actorId, operationId, issuer, subject, type.name(), payloadHash);
+    }
+
+    @Override
     public Optional<Header> lockHeader(UUID actorId, UUID operationId) {
         return jdbc.query("""
-                SELECT identity_issuer, identity_subject, operation_type
+                SELECT identity_issuer, identity_subject, operation_type, payload_hash
                 FROM offline_operation_receipts WHERE actor_id = ? AND operation_id = ?
                 FOR SHARE
                 """, (rs, row) -> new Header(rs.getString("identity_issuer"), rs.getString("identity_subject"),
-                OfflineOperationReceipt.Type.valueOf(rs.getString("operation_type"))), actorId, operationId)
+                OfflineOperationReceipt.Type.valueOf(rs.getString("operation_type")), rs.getString("payload_hash")), actorId, operationId)
                 .stream().findFirst();
     }
 

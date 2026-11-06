@@ -51,18 +51,28 @@ abstract class OfflineOperationHttpTestSupport {
     }
 
     Session session(String role, boolean confirm) throws Exception {
-        var actor = OfflineSyncHttpSupport.createUser(port, role);
+        return sessionForActor(OfflineSyncHttpSupport.createUser(port, role), role, confirm);
+    }
+
+    Session renew(Session previous) throws Exception {
+        return sessionForActor(previous.actor(), previous.role(), true);
+    }
+
+    private Session sessionForActor(OfflineSyncHttpSupport.Identity actor, String role, boolean confirm) throws Exception {
+        Instant expiry = clock.instant().plusSeconds(900).truncatedTo(ChronoUnit.SECONDS);
+        Instant realExpiry = Instant.now().plusSeconds(900).truncatedTo(ChronoUnit.SECONDS);
+        if (realExpiry.isAfter(expiry)) expiry = realExpiry;
         JsonNode challenge = OfflineSyncHttpSupport.success(port, """
                 mutation($input: PrepararSyncOfflineInput!) {
                   prepararSyncOffline(input:$input) { sessionId reauthNotBefore }
                 }
                 """, Map.of("input", Map.of("workspaceId", UUID.randomUUID().toString(),
                 "deviceId", UUID.randomUUID().toString(), "expectedActorId", actor.id())),
-                OfflineSyncHttpSupport.token(actor, role)).path("prepararSyncOffline");
+                OfflineSyncHttpSupport.token(actor, role, null, Instant.now(), expiry)).path("prepararSyncOffline");
         Instant auth = Instant.parse(challenge.path("reauthNotBefore").asText());
         setTime(auth);
         var session = new Session(actor, role, UUID.fromString(challenge.path("sessionId").asText()),
-                auth, Instant.now().plusSeconds(900).truncatedTo(ChronoUnit.SECONDS));
+                auth, expiry);
         if (confirm) {
             OfflineSyncHttpSupport.success(port, """
                     mutation($id:UUID!) { confirmarSyncOffline(sessionId:$id) { sessionId } }

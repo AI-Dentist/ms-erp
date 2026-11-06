@@ -61,8 +61,13 @@ The status/journal read foundation passed 12 owner public HTTP/JWT/PostgreSQL
 cases plus all 30 session/preparation/boundary regressions. This exercises
 missing-operation status, current permissions, pinned expiry and unchanged
 business data, not stored-confirmation replay. Offline synchronization cannot yet
-create a confirmation; patient and confirmed-result integration remain pending. Operation synchronization, patient
-writes, canonical intent hashing and all financial handlers remain unavailable.
+create a confirmation; patient and confirmed-result integration remain pending. The typed `sincronizarOperacionOffline` entry currently reserves immutable intent
+metadata only. Eight new public HTTP/JWT/PostgreSQL intent cases and 46 focused
+regressions passed (54 total), including same-actor retry after a new login 48 hours
+later. `PREPARED` is metadata, never patient registration or a payment. It checks the frozen canonical hash and never
+overwrites a previous actor/operation identity on payload/type conflict.
+Patient execution, `CONFIRMED` business receipts and all financial handlers remain
+unavailable; clients must retain `PREPARED` entries as pending.
 Independent verification and business-transaction integration remain pending. Preparation errors use GraphQL `extensions.code`:
 `ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
 Confirmation additionally classifies failures as `FRESH_LOGIN_REQUIRED`,
