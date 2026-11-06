@@ -26,7 +26,19 @@ type Query {
     obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!): ResumenFlujoCaja!
 }
 
+input ActivarJornadaOfflineInput {
+    workspaceId: UUID!
+    deviceId: UUID!
+    durationSeconds: Int = 28800
+}
+
+type JornadaOffline {
+    credencial: String!
+    clavePublicaSpki: String!
+}
+
 type Mutation {
+    activarJornadaOffline(input: ActivarJornadaOfflineInput!): JornadaOffline!
     actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
     crearUsuario(input: CrearUsuarioInput!): Usuario!
     "ADMIN: atomically create an ERP user, bind an existing Keycloak subject and optionally an existing dentist."

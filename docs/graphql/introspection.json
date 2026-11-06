@@ -10,6 +10,57 @@
       "subscriptionType" : null,
       "types" : [ {
         "kind" : "INPUT_OBJECT",
+        "name" : "ActivarJornadaOfflineInput",
+        "description" : null,
+        "isOneOf" : false,
+        "fields" : null,
+        "inputFields" : [ {
+          "name" : "workspaceId",
+          "description" : null,
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "UUID",
+              "ofType" : null
+            }
+          },
+          "defaultValue" : null,
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
+          "name" : "deviceId",
+          "description" : null,
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "UUID",
+              "ofType" : null
+            }
+          },
+          "defaultValue" : null,
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
+          "name" : "durationSeconds",
+          "description" : null,
+          "type" : {
+            "kind" : "SCALAR",
+            "name" : "Int",
+            "ofType" : null
+          },
+          "defaultValue" : "28800",
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        } ],
+        "interfaces" : null,
+        "enumValues" : null,
+        "possibleTypes" : null
+      }, {
+        "kind" : "INPUT_OBJECT",
         "name" : "ActualizarConsultorioInput",
         "description" : "estado, when present, must be DISPONIBLE, MANTENIMIENTO or INACTIVO; omitted keeps the current one",
         "isOneOf" : false,
@@ -2077,6 +2128,46 @@
         "possibleTypes" : null
       }, {
         "kind" : "OBJECT",
+        "name" : "JornadaOffline",
+        "description" : null,
+        "isOneOf" : null,
+        "fields" : [ {
+          "name" : "credencial",
+          "description" : null,
+          "args" : [ ],
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "String",
+              "ofType" : null
+            }
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
+          "name" : "clavePublicaSpki",
+          "description" : null,
+          "args" : [ ],
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "SCALAR",
+              "name" : "String",
+              "ofType" : null
+            }
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        } ],
+        "inputFields" : null,
+        "interfaces" : [ ],
+        "enumValues" : null,
+        "possibleTypes" : null
+      }, {
+        "kind" : "OBJECT",
         "name" : "McpServerStatus",
         "description" : null,
         "isOneOf" : null,
@@ -2370,6 +2461,36 @@
         "description" : null,
         "isOneOf" : null,
         "fields" : [ {
+          "name" : "activarJornadaOffline",
+          "description" : null,
+          "args" : [ {
+            "name" : "input",
+            "description" : null,
+            "type" : {
+              "kind" : "NON_NULL",
+              "name" : null,
+              "ofType" : {
+                "kind" : "INPUT_OBJECT",
+                "name" : "ActivarJornadaOfflineInput",
+                "ofType" : null
+              }
+            },
+            "defaultValue" : null,
+            "isDeprecated" : false,
+            "deprecationReason" : null
+          } ],
+          "type" : {
+            "kind" : "NON_NULL",
+            "name" : null,
+            "ofType" : {
+              "kind" : "OBJECT",
+              "name" : "JornadaOffline",
+              "ofType" : null
+            }
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
+        }, {
           "name" : "actualizarConfiguracionEmpresa",
           "description" : null,
           "args" : [ {

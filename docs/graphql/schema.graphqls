@@ -59,6 +59,11 @@ type Especialidad {
   nombre: String!
 }
 
+type JornadaOffline {
+  clavePublicaSpki: String!
+  credencial: String!
+}
+
 type McpServerStatus {
   activo: Boolean!
   protocolVersion: String!
@@ -83,6 +88,7 @@ type MovimientoCaja {
 }
 
 type Mutation {
+  activarJornadaOffline(input: ActivarJornadaOfflineInput!): JornadaOffline!
   actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
   actualizarConsultorio(id: UUID!, input: ActualizarConsultorioInput!): Consultorio!
   actualizarEspecialidad(id: UUID!, input: ActualizarEspecialidadInput!): Especialidad!
@@ -299,6 +305,12 @@ scalar DateTime
 
 "RFC 4122 UUID"
 scalar UUID
+
+input ActivarJornadaOfflineInput {
+  deviceId: UUID!
+  durationSeconds: Int = 28800
+  workspaceId: UUID!
+}
 
 "estado, when present, must be DISPONIBLE, MANTENIMIENTO or INACTIVO; omitted keeps the current one"
 input ActualizarConsultorioInput {
