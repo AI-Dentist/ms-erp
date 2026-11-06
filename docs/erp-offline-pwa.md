@@ -53,10 +53,17 @@ are rejected with HTTP 400 and `OFFLINE_MIXED_OPERATION`. Do not send the legacy
 header with new sync roots. `prepararSyncOffline` passed five owner HTTP/JWT/
 PostgreSQL cases (all three roles, context, balance privacy and denials); the
 boundary regression passed 10/10 again. Both canonical schema exports passed.
-Its challenge is not execution authority. Confirmation, the operation ledger,
-status and execution remain unavailable; independent verification remains pending.
-Preparation errors use GraphQL `extensions.code`: `ACTOR_UNAVAILABLE`,
-`PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
+Its challenge is not execution authority. Confirmation passed 15 owner public
+HTTP/JWT/PostgreSQL cases; preparation and boundary regression passed 15 more.
+Signed `auth_time` JSON numbers are parsed exactly as integers/BigDecimal before
+validation: binary-double rounding must never erase a rejected fractional value.
+The operation ledger, status and execution remain unavailable; independent
+verification and business-transaction integration remain pending. Preparation errors use GraphQL `extensions.code`:
+`ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
+Confirmation additionally classifies failures as `FRESH_LOGIN_REQUIRED`,
+`SESSION_UNAVAILABLE`, `SESSION_ACTOR_MISMATCH`, `SESSION_ALREADY_BOUND` or
+`SESSION_EXPIRED`. A real IDP signed `auth_time` claim and forced login remain an
+unproven deployment prerequisite; `iat` is never a fallback.
 
 The following additive contract is published **before T4 source changes**. T3 at
 `fce174b` remains accepted and unchanged. Availability will be recorded per slice;

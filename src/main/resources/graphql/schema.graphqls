@@ -53,8 +53,18 @@ type OfflineSyncChallenge {
     cashflowBalanceBs: BigDecimal
 }
 
+type OfflineSyncSession {
+    sessionId: UUID!
+    actorId: UUID!
+    workspaceId: UUID!
+    deviceId: UUID!
+    authenticatedAt: DateTime!
+    expiresAt: DateTime!
+}
+
 type Mutation {
     prepararSyncOffline(input: PrepararSyncOfflineInput!): OfflineSyncChallenge!
+    confirmarSyncOffline(sessionId: UUID!): OfflineSyncSession!
     activarJornadaOffline(input: ActivarJornadaOfflineInput!): JornadaOffline!
     actualizarConfiguracionEmpresa(input: EmpresaConfigInput!): EmpresaConfig!
     crearUsuario(input: CrearUsuarioInput!): Usuario!

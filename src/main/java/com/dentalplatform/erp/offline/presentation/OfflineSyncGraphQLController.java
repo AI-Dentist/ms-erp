@@ -1,5 +1,6 @@
 package com.dentalplatform.erp.offline.presentation;
 
+import com.dentalplatform.erp.offline.application.ConfirmOfflineSyncUseCase;
 import com.dentalplatform.erp.offline.application.PrepareOfflineSyncUseCase;
 import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
 import graphql.GraphQLError;
@@ -17,9 +18,11 @@ import java.util.UUID;
 @Controller
 public class OfflineSyncGraphQLController {
     private final PrepareOfflineSyncUseCase prepare;
+    private final ConfirmOfflineSyncUseCase confirm;
 
-    public OfflineSyncGraphQLController(PrepareOfflineSyncUseCase prepare) {
+    public OfflineSyncGraphQLController(PrepareOfflineSyncUseCase prepare, ConfirmOfflineSyncUseCase confirm) {
         this.prepare = prepare;
+        this.confirm = confirm;
     }
 
     public record PrepareInput(UUID workspaceId, UUID deviceId, UUID expectedActorId) { }
@@ -28,6 +31,11 @@ public class OfflineSyncGraphQLController {
     public PrepareOfflineSyncUseCase.Challenge prepararSyncOffline(@Argument PrepareInput input) {
         if (input == null) throw new OfflineSyncFailure("INVALID_INPUT");
         return prepare.prepare(input.workspaceId(), input.deviceId(), input.expectedActorId());
+    }
+
+    @MutationMapping
+    public ConfirmOfflineSyncUseCase.ConfirmedSession confirmarSyncOffline(@Argument UUID sessionId) {
+        return confirm.confirm(sessionId);
     }
 
     @GraphQlExceptionHandler(OfflineSyncFailure.class)

@@ -10,14 +10,19 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.text.ParseException;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 @Component
 public class OfflineSyncIdentityAdapter implements OfflineSyncIdentityPort {
     private static final Set<String> ROLES = Set.of("ADMIN", "CAJERO", "RECEPCIONISTA");
+    private static final JsonMapper CLAIMS = JsonMapper.builder()
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
     private final JdbcTemplate jdbc;
     private final Environment environment;
 
@@ -58,10 +63,11 @@ public class OfflineSyncIdentityAdapter implements OfflineSyncIdentityPort {
                 .noneMatch(authority -> authority.getAuthority().equals("ROLE_" + user.role()))) {
             throw new OfflineSyncFailure("PERMISSION_REVOKED");
         }
-        // Read the validated signed payload directly: claim conversion must not coerce fractional auth_time.
+        // Parse the validated signed JSON exactly: double rounding can erase small auth_time fractions.
         Object authTime;
         try {
-            authTime = SignedJWT.parse(jwt.getToken().getTokenValue()).getPayload().toJSONObject().get("auth_time");
+            String payload = SignedJWT.parse(jwt.getToken().getTokenValue()).getPayload().toString();
+            authTime = CLAIMS.readValue(payload, Map.class).get("auth_time");
         } catch (ParseException | RuntimeException ex) {
             throw new OfflineSyncFailure("ACTOR_UNAVAILABLE");
         }

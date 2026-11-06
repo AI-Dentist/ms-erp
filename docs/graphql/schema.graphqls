@@ -102,6 +102,7 @@ type Mutation {
   actualizarUsuario(id: UUID!, input: ActualizarUsuarioInput!): Usuario!
   cobrarCuotaEnEfectivo(input: CobrarEfectivoInput!): Recibo!
   configurarPlanDePagos(input: ConfigurarPlanPagosInput!): OrdenCobro!
+  confirmarSyncOffline(sessionId: UUID!): OfflineSyncSession!
   crearConsultorio(input: CrearConsultorioInput!): Consultorio!
   crearEspecialidad(codigo: String!, descripcion: String, nombre: String!): Especialidad!
   crearOdontologo(input: CrearOdontologoInput!): Odontologo!
@@ -144,6 +145,15 @@ type OfflineSyncChallenge {
   deviceId: UUID!
   expiresAt: DateTime!
   reauthNotBefore: DateTime!
+  sessionId: UUID!
+  workspaceId: UUID!
+}
+
+type OfflineSyncSession {
+  actorId: UUID!
+  authenticatedAt: DateTime!
+  deviceId: UUID!
+  expiresAt: DateTime!
   sessionId: UUID!
   workspaceId: UUID!
 }
