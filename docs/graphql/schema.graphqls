@@ -139,6 +139,29 @@ type Odontologo {
   telefono: String!
 }
 
+type OfflineConfirmedResult {
+  installments: [OfflineInstallmentId!]!
+  movementId: UUID
+  orderId: UUID
+  patientId: UUID
+  receiptId: UUID
+}
+
+type OfflineInstallmentId {
+  id: UUID!
+  number: Int!
+}
+
+type OfflineOperationReceipt {
+  confirmedAt: DateTime
+  operationId: UUID!
+  payloadHash: String
+  reasonCode: String
+  result: OfflineConfirmedResult
+  state: OfflineOperationState!
+  type: OfflineOperationType
+}
+
 type OfflineSyncChallenge {
   actorId: UUID!
   cashflowBalanceBs: BigDecimal
@@ -198,6 +221,7 @@ type Paciente {
 }
 
 type Query {
+  estadoOperacionOffline(operationId: UUID!, sessionId: UUID!): OfflineOperationReceipt!
   listarAuditLogs(limite: Int = 50): [AuditLog!]!
   listarConsultorios: [Consultorio!]!
   listarCuotasPendientesPorPaciente(pacienteId: UUID!): [CuotaPago!]!
@@ -308,6 +332,21 @@ enum MetodoPago {
 enum ModalidadPago {
   CONTADO
   CREDITO
+}
+
+enum OfflineOperationState {
+  BLOCKED
+  CONFIRMED
+  CONFLICT
+  NOT_FOUND
+  PREPARED
+}
+
+enum OfflineOperationType {
+  CASH_EXPENSE
+  CASH_PAYMENT
+  MANUAL_ORDER
+  PATIENT_CREATE
 }
 
 enum TipoMovimientoCaja {

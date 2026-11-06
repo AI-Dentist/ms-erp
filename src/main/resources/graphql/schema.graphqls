@@ -4,6 +4,7 @@ scalar Date
 scalar DateTime
 
 type Query {
+    estadoOperacionOffline(sessionId: UUID!, operationId: UUID!): OfflineOperationReceipt!
     obtenerConfiguracionEmpresa: EmpresaConfig!
     listarUsuarios: [Usuario!]!
     # ADMIN/CAJERO: exact verified JWT subject -> active ERP user, without a doctor dependency.
@@ -476,3 +477,24 @@ type ReporteGenerativoPayload {
     urlDescargaExcel: String!
     urlDescargaPdf: String!
 }
+
+
+enum OfflineOperationType { CASH_PAYMENT CASH_EXPENSE MANUAL_ORDER PATIENT_CREATE }
+enum OfflineOperationState { PREPARED CONFIRMED CONFLICT BLOCKED NOT_FOUND }
+type OfflineOperationReceipt {
+    operationId: UUID!
+    type: OfflineOperationType
+    state: OfflineOperationState!
+    payloadHash: String
+    reasonCode: String
+    confirmedAt: DateTime
+    result: OfflineConfirmedResult
+}
+type OfflineConfirmedResult {
+    patientId: UUID
+    orderId: UUID
+    installments: [OfflineInstallmentId!]!
+    movementId: UUID
+    receiptId: UUID
+}
+type OfflineInstallmentId { number: Int!, id: UUID! }

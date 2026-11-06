@@ -2,6 +2,8 @@ package com.dentalplatform.erp.offline.presentation;
 
 import com.dentalplatform.erp.offline.application.ConfirmOfflineSyncUseCase;
 import com.dentalplatform.erp.offline.application.PrepareOfflineSyncUseCase;
+import com.dentalplatform.erp.offline.application.OfflineOperationStatusUseCase;
+import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
@@ -9,6 +11,7 @@ import graphql.schema.DataFetchingEnvironment;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.GraphQlExceptionHandler;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
+import org.springframework.graphql.data.method.annotation.QueryMapping;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.stereotype.Controller;
 
@@ -19,10 +22,13 @@ import java.util.UUID;
 public class OfflineSyncGraphQLController {
     private final PrepareOfflineSyncUseCase prepare;
     private final ConfirmOfflineSyncUseCase confirm;
+    private final OfflineOperationStatusUseCase status;
 
-    public OfflineSyncGraphQLController(PrepareOfflineSyncUseCase prepare, ConfirmOfflineSyncUseCase confirm) {
+    public OfflineSyncGraphQLController(PrepareOfflineSyncUseCase prepare, ConfirmOfflineSyncUseCase confirm,
+                                        OfflineOperationStatusUseCase status) {
         this.prepare = prepare;
         this.confirm = confirm;
+        this.status = status;
     }
 
     public record PrepareInput(UUID workspaceId, UUID deviceId, UUID expectedActorId) { }
@@ -36,6 +42,11 @@ public class OfflineSyncGraphQLController {
     @MutationMapping
     public ConfirmOfflineSyncUseCase.ConfirmedSession confirmarSyncOffline(@Argument UUID sessionId) {
         return confirm.confirm(sessionId);
+    }
+
+    @QueryMapping
+    public OfflineOperationReceipt estadoOperacionOffline(@Argument UUID sessionId, @Argument UUID operationId) {
+        return status.status(sessionId, operationId);
     }
 
     @GraphQlExceptionHandler(OfflineSyncFailure.class)

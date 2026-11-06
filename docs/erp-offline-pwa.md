@@ -57,8 +57,13 @@ Its challenge is not execution authority. Confirmation passed 15 owner public
 HTTP/JWT/PostgreSQL cases; preparation and boundary regression passed 15 more.
 Signed `auth_time` JSON numbers are parsed exactly as integers/BigDecimal before
 validation: binary-double rounding must never erase a rejected fractional value.
-The operation ledger, status and execution remain unavailable; independent
-verification and business-transaction integration remain pending. Preparation errors use GraphQL `extensions.code`:
+The status/journal read foundation passed 12 owner public HTTP/JWT/PostgreSQL
+cases plus all 30 session/preparation/boundary regressions. This exercises
+missing-operation status, current permissions, pinned expiry and unchanged
+business data, not stored-confirmation replay. Offline synchronization cannot yet
+create a confirmation; patient and confirmed-result integration remain pending. Operation synchronization, patient
+writes, canonical intent hashing and all financial handlers remain unavailable.
+Independent verification and business-transaction integration remain pending. Preparation errors use GraphQL `extensions.code`:
 `ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
 Confirmation additionally classifies failures as `FRESH_LOGIN_REQUIRED`,
 `SESSION_UNAVAILABLE`, `SESSION_ACTOR_MISMATCH`, `SESSION_ALREADY_BOUND` or

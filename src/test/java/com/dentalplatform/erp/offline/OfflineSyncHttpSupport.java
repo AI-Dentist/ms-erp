@@ -155,6 +155,10 @@ final class OfflineSyncHttpSupport {
         return token(identity.subject(), identity.username(), authTime, issuedAt, expiresAt);
     }
 
+    static String token(Identity identity, String role, Object authTime, Instant issuedAt, Instant expiresAt) {
+        return token(identity.subject(), identity.username(), authTime, issuedAt, expiresAt, role);
+    }
+
     private static String token(String subject, String username) {
         Instant now = Instant.now();
         return token(subject, username, null, now.minusSeconds(5), now.plusSeconds(300));
