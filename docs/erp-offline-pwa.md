@@ -44,6 +44,15 @@ El PIN nunca se envía al backend. No persistir bearer, refresh token ni contras
 
 ## T4 safe synchronization — frozen v1 contract, implementation pending
 
+Availability: the HTTP boundary passed owner public HTTP/JWT/embedded-PostgreSQL
+checks (10/10, including replay of all four legacy mutations). This verifies the
+boundary only; final independent security/concurrency verification remains pending.
+For a selected new sync root, any `Idempotency-Key` (including blank) is rejected
+with HTTP 400 and JSON code `OFFLINE_LEGACY_KEY_NOT_ALLOWED`; mixed business roots
+are rejected with HTTP 400 and `OFFLINE_MIXED_OPERATION`. Do not send the legacy
+header with new sync roots. Session APIs, operation ledger and execution remain
+pending; this boundary does not make those APIs available.
+
 The following additive contract is published **before T4 source changes**. T3 at
 `fce174b` remains accepted and unchanged. Availability will be recorded per slice;
 these fields are not claimed to exist until their implementation/checks are delivered.
