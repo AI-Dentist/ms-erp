@@ -79,9 +79,10 @@ Recovery records rejection/retry metadata only after that transaction rolls back
 Only a committed `CONFIRMED` result means registered; keep `PREPARED` pending.
 Manual-order execution is now covered by 15 owner HTTP/JWT/PostgreSQL cases and
 an 80/80 scoped run (76 HTTP plus four codec checks). Cash-payment execution passed
-17 owner HTTP/JWT/PostgreSQL cases. Expense execution is not included in this slice
-(reservation metadata only); final independent security/concurrency verification
-remains pending. Preparation errors use GraphQL `extensions.code`:
+17 owner HTTP/JWT/PostgreSQL cases; expense execution passed 17 more. All four
+handlers passed the final 114-check scoped seam (110 HTTP plus four codec checks),
+with no failures/errors/skips. Final independent security/concurrency verification
+and the applicable differential remain pending; owner checks are not approval. Preparation errors use GraphQL `extensions.code`:
 `ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
 Confirmation additionally classifies failures as `FRESH_LOGIN_REQUIRED`,
 `SESSION_UNAVAILABLE`, `SESSION_ACTOR_MISMATCH`, `SESSION_ALREADY_BOUND` or
@@ -351,8 +352,8 @@ persisted amounts/quota mappings and replay, stale/invalid money with no effects
 inactive references, blocked/failed/foreign parents and subsequent resolution,
 contention with the unchanged online tariff updater, and post-confirmation rollback
 before a successful identical retry. This is owner evidence, not independent review.
-Cash-payment execution is described below. Expense delivery and final independent
-verification remain pending.
+Cash-payment and expense execution are described below. Final independent
+verification remains pending.
 
 ### Cash-payment execution (owner verified)
 
@@ -372,3 +373,25 @@ contention and rollback after actual confirmation SQL followed by identical retr
 The initial shared financial RED had 22 assertion failures and two permission-denial
 passes across 24 cases, with no errors/skips; later controls are regression coverage,
 not separately observed RED. Owner evidence does not replace independent review.
+
+### Expense execution (owner verified)
+
+`CASH_EXPENSE` uses the live canonical cashier and the existing expense case.
+It rejects nonpositive, sub-cent or per-record `NUMERIC(12,2)` overflow amounts
+before Money rounding, and retains the existing category/description validation.
+The selected payment method is recorded, not executed through a payment provider.
+It compares the frozen **all-time** accounting balance under PostgreSQL
+`SHARE ROW EXCLUSIVE` movement-table locking, conflicting with legacy cash and
+expense inserts. It acquires no order lock afterward. The signed aggregate balance
+may be negative or exceed a single movement's storage bound: no insufficient-funds
+or open-register rule is invented. Movement, audit, returned ID and confirmation
+commit together; technical rollback keeps the same frozen intent retryable.
+
+All 17 owner HTTP/JWT/PostgreSQL cases passed, including actual cashier command
+capture/stored movement fields, status/replay after balance changes, stale/invalid
+inputs without effects, negative/large aggregate balance, competing offline sessions,
+legacy expense and cash-insert contention without deadlock, and rollback after
+confirmation SQL followed by one identical retry. Financial focus passed 34/34;
+the final scoped seam passed 114/114 in 231.7 seconds. The suite excludes historical
+T3/T6/n8n/global checks and real providers/containers. Final independent verification
+and the applicable differential are still pending; no native approval is claimed.
