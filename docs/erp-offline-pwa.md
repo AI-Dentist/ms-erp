@@ -430,3 +430,46 @@ GraphQL contract or legacy commands. Owner checks after these fixes: denial case
 the ten scoped classes (see the commit message for the observed counts); the two
 advisory changes have no separately observable failure path, which is stated instead
 of claimed as a red observation.
+
+### Client contract clarifications
+
+**Open cash register.** `requireOpenCashRegister` defaults to `false`, and omitting it
+does **not** assert that a caja is open: the model has no apertura/cierre rule to check,
+so the field is only a client request. Sending `true` still conflicts with
+`CASH_REGISTER_STATE_NOT_MODELLED` and writes nothing; sending `false` or omitting it
+records the movement without any positive claim about register state.
+
+**Discounts.** A `descuentoBs` supplied by the client on `OfflineOrderInput` is not a new
+offline capability: it is the pre-existing parameter of the legacy
+`crearOrdenCobroManual` mutation, reused unchanged by the dedicated handler. No
+offline-only discount rule, cap or authorization was added, and the frozen
+`expectedTotalBs` must still match the computed total exactly. Treating discounts on
+manual orders as a distinct business decision remains an open product question outside
+this contract; nothing in the offline path grants a client an additional discount
+right.
+
+**Accounting balance.** `cashflowBalanceBs` returned by `prepararSyncOffline` means
+all-time accounting ingresos minus egresos, in Bolivianos. Immediately before sending a
+`CASH_EXPENSE`, the client must copy that exact value into `expectedCashflowBalanceBs` as
+a plain decimal string in `Bs`. Because synchronization always happens online, a client
+holding an older value must call `prepararSyncOffline` again to obtain the current
+balance before sending. A different value conflicts with `STALE_CASHFLOW_BALANCE` and
+writes nothing. The figure is not physical cash, not a per-period total and not tied to
+an open register.
+
+**Order balance.** `ordenes_cobro.saldo_pendiente_bs` is always the sum of the pending
+installments; that identity is maintained through plan configuration, every payment
+(cash or QR) and plan annulment. The offline `CASH_PAYMENT` payload therefore keeps
+expecting the exact `expectedOrderBalanceBs` and `expectedQuotaAmountBs`, but it no longer
+also requires the installment amount to equal the order balance, matching the unchanged
+online cash use case.
+
+**Transaction boundary.** `sincronizarOperacionOffline` runs with `Propagation.NEVER`,
+so it never joins an enclosing transaction and no session, intent or financial lock can
+leak across its two sequential transactions. The evaluation kept `execute` on its
+existing `REQUIRED` propagation: with the facade refusing any outer transaction, the
+execution transaction is always created and owned by `execute` itself, so the business
+effects, the canonical result mapping and the `CONFIRMED` transition keep committing
+together. A denial raised while reserving is recorded on the committed `PREPARED` intent
+as `BLOCKED` with that denial code, and a denial after `CONFIRMED` is a no-op that keeps
+the stored result.

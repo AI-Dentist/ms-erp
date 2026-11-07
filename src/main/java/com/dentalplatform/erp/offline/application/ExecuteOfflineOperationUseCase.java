@@ -4,8 +4,11 @@ import com.dentalplatform.erp.configsecurity.application.port.OfflineSyncIdentit
 import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.ZoneOffset;
@@ -22,15 +25,19 @@ public class ExecuteOfflineOperationUseCase {
     private final OfflinePayloadCodec codec;
     private final Clock clock;
     private final Map<OfflineOperationReceipt.Type, OfflineOperationHandler> handlers;
+    private final TransactionTemplate requiresNew;
 
     public ExecuteOfflineOperationUseCase(ConfirmOfflineSyncUseCase sessions, OfflineOperationStore operations,
                                           OfflineSyncIdentityPort identities, OfflinePayloadCodec codec, Clock clock,
+                                          PlatformTransactionManager transactions,
                                           List<OfflineOperationHandler> handlers) {
         this.sessions = sessions;
         this.operations = operations;
         this.identities = identities;
         this.codec = codec;
         this.clock = clock;
+        this.requiresNew = new TransactionTemplate(transactions);
+        this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.handlers = new EnumMap<>(OfflineOperationReceipt.Type.class);
         for (var handler : handlers) {
             if (this.handlers.put(handler.type(), handler) != null) {
@@ -87,14 +94,15 @@ public class ExecuteOfflineOperationUseCase {
      * to a durable non-success state that keeps a legitimate retry of the same frozen intent possible.
      * The live identity port needs its own transaction, so this runs isolated from the rolled-back execution.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordDenied(OfflineOperationRequest request, OfflineSyncFailure denial) {
         if (request == null || request.operationId() == null) return;
         try {
-            operations.failure(identities.current().actorId(), request.operationId(), denial.code(),
-                    OfflineOperationReceipt.State.BLOCKED);
-        } catch (RuntimeException unavailableIdentity) {
-            // Keep the original denial as the response; never convert it into a success or a new error.
+            // An explicit template keeps this write out of the failed execution while making every failure,
+            // including a commit-time unexpected rollback, non-fatal: the original denial stays the response.
+            requiresNew.executeWithoutResult(status ->
+                    operations.recordSessionDenial(request.sessionId(), request.operationId(), denial.code()));
+        } catch (RuntimeException unavailableIdentityOrLedger) {
+            // Never convert the denial into a success or into a different error.
         }
     }
 

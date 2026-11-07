@@ -11,6 +11,7 @@ import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,13 +31,19 @@ public class OfflinePatientOperationHandler implements OfflineOperationHandler {
 
     @Override
     public OfflineOperationReceipt.Result execute(Map<String, Object> payload, UUID actorId) {
+        // Read the frozen payload defensively: a malformed value is an explicit conflict, never a technical
+        // failure that leaves the intent retryable, and never an unchecked cast escaping this handler.
+        String ciNit = required(payload.get("ciNit"));
+        String nombres = required(payload.get("nombres"));
+        String apellidos = required(payload.get("apellidos"));
+        String telefono = required(payload.get("telefonoWhatsapp"));
+        LocalDate fechaNacimiento = fechaNacimiento(payload.get("fechaNacimiento"));
+        String genero = optional(payload.get("genero"));
+        String email = optional(payload.get("email"));
+        String direccion = optional(payload.get("direccion"));
         try {
-            Object birth = payload.get("fechaNacimiento");
-            var patient = patients.ejecutar(new CrearPacienteCommand((String) payload.get("ciNit"),
-                    (String) payload.get("nombres"), (String) payload.get("apellidos"),
-                    birth == null ? null : LocalDate.parse(birth.toString()), (String) payload.get("genero"),
-                    (String) payload.get("telefonoWhatsapp"), (String) payload.get("email"),
-                    (String) payload.get("direccion")));
+            var patient = patients.ejecutar(new CrearPacienteCommand(ciNit, nombres, apellidos, fechaNacimiento,
+                    genero, telefono, email, direccion));
             entityManager.flush();
             return new OfflineOperationReceipt.Result(patient.getId(), null, List.of(), null, null);
         } catch (BusinessRuleException rejected) {
@@ -46,6 +53,32 @@ public class OfflinePatientOperationHandler implements OfflineOperationHandler {
                 throw new OfflineOperationConflict("PATIENT_DUPLICATE");
             }
             throw new OfflineOperationConflict("INVALID_INPUT");
+        } catch (ClassCastException | IllegalArgumentException rejected) {
+            throw new OfflineOperationConflict("INVALID_INPUT");
         }
+    }
+
+    private static String required(Object value) {
+        if (!(value instanceof String text) || text.isBlank()) throw invalid();
+        return text;
+    }
+
+    private static String optional(Object value) {
+        if (value == null) return null;
+        if (!(value instanceof String text)) throw invalid();
+        return text;
+    }
+
+    private static LocalDate fechaNacimiento(Object value) {
+        if (value == null) return null;
+        try {
+            return LocalDate.parse(value.toString());
+        } catch (DateTimeParseException | NullPointerException malformed) {
+            throw invalid();
+        }
+    }
+
+    private static OfflineOperationConflict invalid() {
+        return new OfflineOperationConflict("INVALID_INPUT");
     }
 }

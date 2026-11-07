@@ -1,5 +1,6 @@
 package com.dentalplatform.erp.offline;
 
+import com.dentalplatform.erp.mastercatalog.application.usecase.CrearPacienteUseCase;
 import com.dentalplatform.erp.offline.application.OfflineOperationStore;
 import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.doAnswer;
 
 class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
     @MockitoSpyBean OfflineOperationStore operations;
+    @MockitoSpyBean CrearPacienteUseCase patients;
     private static final String SYNC = OfflineOperationIntentHttpTest.SYNC;
     private static final String STATUS = OfflineOperationIntentHttpTest.STATUS;
 
@@ -229,15 +231,67 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
     void concurrentDifferentOperationsForOneCiHaveOneWinnerAndOneDuplicateConflict() throws Exception {
         var first = session("ADMIN", true);
         var second = renew(first);
+        var payload = patient();
+        UUID a = UUID.randomUUID(), b = UUID.randomUUID();
         var before = OfflineSyncHttpSupport.snapshot(port);
-        var outcomes = concurrently(first, second, UUID.randomUUID(), UUID.randomUUID(), patient());
+        var inside = new CountDownLatch(2);
+        var go = new CountDownLatch(1);
+        // Both requests pass the CI/NIT precheck together, so PostgreSQL's unique index decides the race
+        // instead of the precheck; the loser must keep the domain classification, never a technical retry.
+        doAnswer(call -> {
+            inside.countDown();
+            if (!go.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Barrier timeout");
+            return call.callRealMethod();
+        }).when(patients).ejecutar(any());
+        List<JsonNode> outcomes;
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var left = executor.submit(() -> sync(first, a, payload));
+            var right = executor.submit(() -> sync(second, b, payload));
+            try {
+                assertThat(inside.await(10, TimeUnit.SECONDS)).isTrue();
+            } finally {
+                go.countDown();
+            }
+            outcomes = List.of(left.get(30, TimeUnit.SECONDS), right.get(30, TimeUnit.SECONDS));
+        }
         assertThat(outcomes.stream().map(result -> result.path("state").asText()).toList())
                 .containsExactlyInAnyOrder("CONFIRMED", "CONFLICT");
+        JsonNode winner = outcomes.stream().filter(result -> result.path("state").asText().equals("CONFIRMED"))
+                .findFirst().orElseThrow();
         JsonNode rejected = outcomes.stream().filter(result -> result.path("state").asText().equals("CONFLICT"))
                 .findFirst().orElseThrow();
         assertThat(rejected.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
         assertThat(rejected.path("result").isNull()).isTrue();
+        assertThat(status(first, UUID.fromString(rejected.path("operationId").asText()))).isEqualTo(rejected);
         onePatient(before);
+        // The losing attempt leaves no second row: exactly one patient exists for that CI/NIT.
+        int stored = 0;
+        for (JsonNode patient : OfflineSyncHttpSupport.success(port, "{ listarPacientes { id ciNit } }",
+                Map.of(), OfflineSyncHttpSupport.admin()).path("listarPacientes")) {
+            if (patient.path("ciNit").asText().equals(payload.get("ciNit"))) {
+                stored++;
+                assertThat(patient.path("id").asText()).isEqualTo(winner.path("result").path("patientId").asText());
+            }
+        }
+        assertThat(stored).isEqualTo(1);
+    }
+
+    @Test
+    void malformedPatientValueIsATypedConflictInsteadOfARetryablePreparedIntent() throws Exception {
+        var session = session("ADMIN", true);
+        UUID op = UUID.randomUUID();
+        // The canonical codec passes nombres through as TEXT, so this reaches the patient handler; PostgreSQL
+        // rejects the NUL character for a text column, and that data-level rejection must be classified as an
+        // explicit INVALID_INPUT conflict instead of a retryable PREPARED intent.
+        var payload = new java.util.HashMap<>(patient());
+        payload.put("nombres", "Off\u0000line");
+        var before = OfflineSyncHttpSupport.snapshot(port);
+        JsonNode rejected = sync(session, op, payload);
+        assertThat(rejected.path("state").asText()).isEqualTo("CONFLICT");
+        assertThat(rejected.path("reasonCode").asText()).isEqualTo("INVALID_INPUT");
+        assertThat(rejected.path("result").isNull()).isTrue();
+        assertThat(status(session, op)).isEqualTo(rejected);
+        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
     }
 
     @Test

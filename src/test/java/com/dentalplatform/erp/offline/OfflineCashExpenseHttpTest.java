@@ -34,6 +34,8 @@ class OfflineCashExpenseHttpTest extends OfflineOperationHttpTestSupport {
     @MockitoSpyBean MovimientoCajaRepository movements;
     private static final String FIELDS = "operationId type state payloadHash reasonCode confirmedAt result { movementId receiptId }";
     private static final String SYNC = "mutation($input:OfflineOperationInput!){sincronizarOperacionOffline(input:$input){" + FIELDS + "}}";
+    private static final String PAYMENT_FIELDS = "operationId type state reasonCode result { orderId movementId receiptId }";
+    private static final String PAYMENT_SYNC = "mutation($input:OfflineOperationInput!){sincronizarOperacionOffline(input:$input){" + PAYMENT_FIELDS + "}}";
     private static final String STATUS = "query($session:UUID!,$op:UUID!){estadoOperacionOffline(sessionId:$session,operationId:$op){" + FIELDS + "}}";
 
     private BigDecimal balance(JsonNode snapshot) {
@@ -327,6 +329,88 @@ class OfflineCashExpenseHttpTest extends OfflineOperationHttpTestSupport {
         var body = OfflineSyncHttpSupport.json(response.body());
         assertThat(body.has("errors")).as(response.body()).isFalse();
         return body.path("data");
+    }
+
+    private JsonNode orderWithOneInstallment() throws Exception {
+        var patient = old("mutation($input:CrearPacienteInput!){crearPaciente(input:$input){id}}", Map.of("input", Map.of(
+                "ciNit", UUID.randomUUID().toString().replace("-", "").substring(0, 24), "nombres", "Interleaved",
+                "apellidos", "Patient", "telefonoWhatsapp", "+59170012345"))).path("crearPaciente");
+        var service = old("mutation($input:CrearServicioInput!){crearServicioOdontologico(input:$input){id}}", Map.of("input", Map.of(
+                "codigo", "mix-" + UUID.randomUUID().toString().substring(0, 18), "nombre", "Interleaved cash test",
+                "descripcion", "Synthetic", "precioBaseBs", "120.50"))).path("crearServicioOdontologico");
+        return old("mutation($input:CrearOrdenCobroInput!){crearOrdenCobroManual(input:$input){id cuotas{id}}}",
+                Map.of("input", Map.of("pacienteId", patient.path("id").asText(), "items", java.util.List.of(
+                        Map.of("servicioId", service.path("id").asText(), "cantidad", 1))))).path("crearOrdenCobroManual");
+    }
+
+    @Test
+    void offlinePaymentAndExpenseInterleaveWithoutDeadlockAndKeepBothEffects() throws Exception {
+        // The payment uses its own session: the session row is locked FOR UPDATE for the whole business
+        // transaction, so a shared session would serialize the requests before any financial lock.
+        var expenseSession = session("ADMIN", true);
+        var paymentSession = renew(expenseSession);
+        var order = orderWithOneInstallment();
+        String quota = order.path("cuotas").get(0).path("id").asText();
+        var before = OfflineSyncHttpSupport.snapshot(port);
+        var expenseInput = payload(balance(before), "1.00");
+        var cash = new HashMap<>(Map.of("quota", Map.of("id", quota), "expectedOrderState", "PENDIENTE",
+                "expectedQuotaState", "PENDIENTE", "expectedOrderBalanceBs", "120.50",
+                "expectedQuotaAmountBs", "120.50", "ciNitCliente", "1234567 SC",
+                "razonSocialCliente", "Synthetic Customer", "requireOpenCashRegister", false));
+        var ledgerLocked = new CountDownLatch(1);
+        var releaseExpense = new CountDownLatch(1);
+        var paymentAtInsert = new CountDownLatch(1);
+        doAnswer(call -> {
+            // The expense handler already holds SHARE ROW EXCLUSIVE on movimientos_caja at this point.
+            if (((RegistrarEgresoCommand) call.getArgument(0)).categoria().equals("Offline supplies")) {
+                ledgerLocked.countDown();
+                if (!releaseExpense.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Barrier timeout");
+            }
+            return call.callRealMethod();
+        }).when(expenses).ejecutar(any());
+        doAnswer(call -> {
+            var movement = (com.dentalplatform.erp.financebilling.domain.model.MovimientoCaja) call.getArgument(0);
+            if (movement.tipoMovimiento().name().equals("INGRESO")) paymentAtInsert.countDown();
+            return call.callRealMethod();
+        }).when(movements).guardar(any());
+        UUID expenseOperation = UUID.randomUUID();
+        UUID paymentOperation = UUID.randomUUID();
+        JsonNode expenseResult;
+        JsonNode paymentResult;
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var offlineExpense = executor.submit(() -> sync(expenseSession, expenseOperation, expenseInput));
+            try {
+                assertThat(ledgerLocked.await(10, TimeUnit.SECONDS)).isTrue();
+                var offlinePayment = executor.submit(() -> OfflineSyncHttpSupport.success(port, PAYMENT_SYNC,
+                        Map.of("input", Map.of("sessionId", paymentSession.id().toString(),
+                                "operationId", paymentOperation.toString(), "type", "CASH_PAYMENT", "cash", cash)),
+                        paymentSession.token()).path("sincronizarOperacionOffline"));
+                // The payment holds its order lock and is waiting for the movement table: no deadlock, only order.
+                assertThat(paymentAtInsert.await(10, TimeUnit.SECONDS)).isTrue();
+                assertThatThrownBy(() -> offlinePayment.get(200, TimeUnit.MILLISECONDS))
+                        .isInstanceOf(TimeoutException.class);
+                releaseExpense.countDown();
+                expenseResult = offlineExpense.get(20, TimeUnit.SECONDS);
+                paymentResult = offlinePayment.get(20, TimeUnit.SECONDS);
+            } finally {
+                releaseExpense.countDown();
+            }
+        }
+        assertThat(expenseResult.path("state").asText()).isEqualTo("CONFIRMED");
+        assertThat(expenseResult.path("result").path("movementId").asText()).isNotBlank();
+        assertThat(paymentResult.path("state").asText()).isEqualTo("CONFIRMED");
+        assertThat(paymentResult.path("result").path("orderId").asText()).isEqualTo(order.path("id").asText());
+        assertThat(paymentResult.path("result").path("movementId").asText()).isNotBlank();
+        assertThat(paymentResult.path("result").path("receiptId").asText()).isNotBlank();
+        var after = OfflineSyncHttpSupport.snapshot(port);
+        assertThat(after.path("obtenerFlujoCaja").path("movimientos").size())
+                .isEqualTo(before.path("obtenerFlujoCaja").path("movimientos").size() + 2);
+        assertThat(balance(after)).isEqualByComparingTo(balance(before).add(new BigDecimal("119.50")));
+        var detail = old("query($id:UUID!){obtenerOrdenCobroDetalle(id:$id){estado saldoPendienteBs cuotas{estado}}}",
+                Map.of("id", order.path("id").asText())).path("obtenerOrdenCobroDetalle");
+        assertThat(detail.path("estado").asText()).isEqualTo("PAGADO");
+        assertThat(new BigDecimal(detail.path("saldoPendienteBs").asText())).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(detail.path("cuotas").get(0).path("estado").asText()).isEqualTo("PAGADA");
     }
 
     @Test

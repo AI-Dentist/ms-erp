@@ -74,6 +74,17 @@ public class JdbcOfflineOperationStore implements OfflineOperationStore {
     }
 
     @Override
+    public void recordSessionDenial(UUID sessionId, UUID operationId, String reason) {
+        jdbc.update("""
+                UPDATE offline_operation_receipts r
+                SET state = 'BLOCKED', reason_code = ?, result_json = NULL, confirmed_at = NULL
+                FROM offline_sync_sessions s
+                WHERE s.session_id = ? AND r.actor_id = s.actor_id AND r.operation_id = ?
+                  AND r.state <> 'CONFIRMED'
+                """, reason, sessionId, operationId);
+    }
+
+    @Override
     public Optional<OfflineOperationReceipt> receipt(UUID actorId, UUID operationId) {
         return jdbc.query("""
                 SELECT operation_type, state, payload_hash, reason_code, confirmed_at, result_json

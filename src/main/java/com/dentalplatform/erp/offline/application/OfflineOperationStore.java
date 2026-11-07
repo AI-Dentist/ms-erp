@@ -13,5 +13,10 @@ public interface OfflineOperationStore {
     Optional<Header> lockForExecution(UUID actorId, UUID operationId);
     void confirm(UUID actorId, UUID operationId, OfflineOperationReceipt.Result result, java.time.OffsetDateTime at);
     void failure(UUID actorId, UUID operationId, String reason, OfflineOperationReceipt.State state);
+    /**
+     * Records a denial on the reservation bound to this session. The session row supplies the actor, so a revoked
+     * or mismatched live identity cannot prevent the denial from being written; CONFIRMED rows are never touched.
+     */
+    void recordSessionDenial(UUID sessionId, UUID operationId, String reason);
     Optional<OfflineOperationReceipt> receipt(UUID actorId, UUID operationId);
 }
