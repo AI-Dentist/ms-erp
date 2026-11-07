@@ -74,12 +74,12 @@ public class JdbcOfflineOperationStore implements OfflineOperationStore {
     }
 
     @Override
-    public void recordSessionDenial(UUID sessionId, UUID operationId, String reason,
-                                    String callerIssuer, String callerSubject) {
+    public int recordSessionDenial(UUID sessionId, UUID operationId, String reason,
+                                   String callerIssuer, String callerSubject) {
         // The caller's validated principal must match BOTH the session and the reservation identity, so a
         // denial can never mutate another actor's ledger by presenting their identifiers. CONFLICT is a
         // terminal business classification and is never rewritten into a retryable state.
-        jdbc.update("""
+        return jdbc.update("""
                 UPDATE offline_operation_receipts r
                 SET state = 'BLOCKED', reason_code = ?, result_json = NULL, confirmed_at = NULL
                 FROM offline_sync_sessions s

@@ -92,27 +92,48 @@ public class ExecuteOfflineOperationUseCase {
         return operations.receipt(locked.context().caller().actorId(), request.operationId()).orElseThrow();
     }
 
+    /** Marker class for the degraded case that intentionally writes nothing: the caller is not the owner. */
+    private static final class SessionActorMismatchNoWrite { }
+
+    /** Marker class for the degraded case where the denial statement ran but changed no row. */
+    private static final class NoRowUpdatedNoWrite { }
+
     /**
      * Records a denial on the existing reservation instead of deleting it: identity, type and payload hash
      * stay immutable, so a later replay with altered intent still mismatches and never executes. The row moves
      * to a durable non-success state that keeps a legitimate retry of the same frozen intent possible.
      * The live identity port needs its own transaction, so this runs isolated from the rolled-back execution.
+     * The write is best-effort, so every degraded case is logged at WARN the same way - an identity mismatch that
+     * writes nothing, a statement that changes no row, and an unavailable identity or ledger - because the denial
+     * response alone never reveals that its durable reason is missing.
      */
     public void recordDenied(OfflineOperationRequest request, OfflineSyncFailure denial) {
         if (request == null || request.operationId() == null || request.sessionId() == null) return;
-        // A session/actor mismatch means the caller is not the owner: write nothing at all.
-        if ("SESSION_ACTOR_MISMATCH".equals(denial.code())) return;
+        // A session/actor mismatch means the caller is not the owner: write nothing at all, but never silently.
+        if ("SESSION_ACTOR_MISMATCH".equals(denial.code())) {
+            logNotRecorded(request, denial, SessionActorMismatchNoWrite.class.getName());
+            return;
+        }
         try {
             var caller = identities.principal();
             // An explicit template keeps this write out of the failed execution while making every failure,
             // including a commit-time unexpected rollback, non-fatal: the original denial stays the response.
-            requiresNew.executeWithoutResult(status -> operations.recordSessionDenial(request.sessionId(),
+            Integer changed = requiresNew.execute(status -> operations.recordSessionDenial(request.sessionId(),
                     request.operationId(), denial.code(), caller.issuer(), caller.subject()));
+            // No row changed: the intent is already CONFIRMED/CONFLICT, absent, or owned by another identity.
+            // Nothing is retried here; the degraded outcome is only made observable.
+            if (changed == null || changed == 0) {
+                logNotRecorded(request, denial, NoRowUpdatedNoWrite.class.getName());
+            }
         } catch (RuntimeException unavailableIdentityOrLedger) {
-            // The denial stays the response, but a write that never happened must not look like a mystery later.
-            log.warn("Offline denial reason was not recorded: operationId={} reason={} exceptionClass={}",
-                    request.operationId(), denial.code(), unavailableIdentityOrLedger.getClass().getName());
+            logNotRecorded(request, denial, unavailableIdentityOrLedger.getClass().getName());
         }
+    }
+
+    /** One WARN shape for every degraded write, so an operator sees the same three fields in all three cases. */
+    private static void logNotRecorded(OfflineOperationRequest request, OfflineSyncFailure denial, String cause) {
+        log.warn("Offline denial reason was not recorded: operationId={} reason={} exceptionOrMarkerClass={}",
+                request.operationId(), denial.code(), cause);
     }
 
     /** Called through the proxy only AFTER execute has returned exceptionally and rolled back. */

@@ -91,7 +91,7 @@ Only a committed `CONFIRMED` result means registered; keep `PREPARED` pending.
 Manual-order execution is now covered by 15 owner HTTP/JWT/PostgreSQL cases and
 an 80/80 scoped run (76 HTTP plus four codec checks). Cash-payment execution passed
 17 owner HTTP/JWT/PostgreSQL cases; expense execution passed 17 more. All four
-handlers passed the final 114-check scoped seam (110 HTTP plus four codec checks),
+handlers passed the then-current 114-check scoped seam (110 HTTP plus four codec checks),
 with no failures/errors/skips. Final independent security/concurrency verification
 and the applicable differential remain pending; owner checks are not approval. Preparation errors use GraphQL `extensions.code`:
 `ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
@@ -403,7 +403,7 @@ capture/stored movement fields, status/replay after balance changes, stale/inval
 inputs without effects, negative/large aggregate balance, competing offline sessions,
 legacy expense and cash-insert contention without deadlock, and rollback after
 confirmation SQL followed by one identical retry. Financial focus passed 34/34;
-the final scoped seam passed 114/114 in 231.7 seconds. The suite excludes historical
+the scoped seam as it stood then passed 114/114 in 231.7 seconds. The suite excludes historical
 T3/T6/n8n/global checks and real providers/containers. Final independent verification
 and the applicable differential are still pending; no native approval is claimed.
 
@@ -426,20 +426,26 @@ it to a new `usuarios.id` can duplicate a confirmed business action.
 balance: the unchanged cash use case pays any pending installment, so the offline path
 must not add that restriction. Expense validation reuses the injected application
 `Clock` instead of reading the system clock directly. Neither change alters the
-GraphQL contract or legacy commands. Owner checks after these fixes: denial case plus
-the ten scoped classes (see the commit message for the observed counts); the two
+GraphQL contract or legacy commands. Owner checks after these fixes covered the thirteen scoped
+classes listed below, the denial case included (see the commit message for the observed counts); the two
 advisory changes have no separately observable failure path, which is stated instead
 of claimed as a red observation.
 
 ### Scoped verification set and its per-class counts
 
-`python target/t6-catalog/run-tests.py <label> seam` selects exactly these thirteen classes
-(the runner holds the list as `SEAM_SCOPE`, so the scope cannot drift with a naming pattern):
+The scope is exactly the thirteen classes in the table below, and that table is the source of
+truth for it: any change to the seam starts by editing this table. Re-run the same set with a
+plain, tracked Maven command that names every class, so a third party reproduces it without
+depending on a local script:
+
+```bash
+./mvnw test -Dtest=OfflineFailureClassifierTest,OfflineSyncDenialHttpTest,OfflineOperationSchemaTest,OfflineOperationIntentHttpTest,OfflinePatientSyncHttpTest,OfflineCashExpenseHttpTest,OfflineCashPaymentHttpTest,OfflineManualOrderHttpTest,OfflineOperationStatusHttpTest,OfflinePayloadCodecTest,OfflineSyncSessionHttpTest,OfflineSyncPreparationHttpTest,OfflineSyncBoundaryLegacyHttpTest
+```
 
 | Class | Cases |
 |---|---|
 | OfflineFailureClassifierTest | 8 |
-| OfflineSyncDenialHttpTest | 8 |
+| OfflineSyncDenialHttpTest | 9 |
 | OfflineOperationSchemaTest | 2 |
 | OfflineOperationIntentHttpTest | 8 |
 | OfflinePatientSyncHttpTest | 14 |
@@ -480,10 +486,14 @@ left the row `PREPARED` with no reason until something else happened, is no long
 
 Degraded case, stated instead of promised away: recording the reason is a best-effort write in
 its own transaction. If that write cannot run (unavailable identity, a ledger failure, or an
-identity mismatch where nothing is written at all), the intent keeps its previous state and the
-status may still answer `PREPARED` with a null reason. The conflict itself is always returned to
-the caller that triggered it; only the durable record can be missing, and the server logs the
-failure rather than pretending the write succeeded.
+identity mismatch where nothing is written at all), or if it runs but changes no row because
+the intent is already terminal or belongs to another identity, the intent keeps its previous
+state and the status may still answer `PREPARED` with a null reason. The conflict itself is
+always returned to the caller that triggered it; only the durable record can be missing. All
+three degraded cases - identity mismatch, zero rows changed and an unavailable identity or
+ledger - log one WARN with the same three fields: operation id, reason code and the exception
+class (or the marker class naming the no-write case). The server therefore never pretends the
+write succeeded.
 
 `BLOCKED` is **not terminal**: the frozen intent may still be executed with its original
 payload, which is why the same state now means both "a denial was recorded" and "a conflict

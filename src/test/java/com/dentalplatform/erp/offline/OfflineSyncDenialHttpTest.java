@@ -377,4 +377,66 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
         var after = OfflineSyncHttpSupport.snapshot(port);
         assertThat(after.path("listarPacientes").size()).isEqualTo(before.path("listarPacientes").size() + 1);
     }
+
+    /**
+     * FIX 1 guard: recording the denial reason is best-effort, so each degraded case logs one WARN with the same
+     * three fields - operation id, reason code and the class (or marker class) that names what prevented the
+     * write - exactly as the classifier warning is pinned. The denial response is unchanged in both cases.
+     */
+    @Test
+    void aDenialWhoseReasonCannotBeWrittenIsLoggedWithOperationReasonAndMarker() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+                .getLogger(ExecuteOfflineOperationUseCase.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            // Degraded case 1: another identity presents the owner's session, so nothing may be written at all.
+            var owner = session("ADMIN", true);
+            var intruder = session("ADMIN", true);
+            UUID mismatchOperation = UUID.randomUUID();
+            String mismatchCi = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+            var mismatchRequest = new OfflineOperationRequest(owner.id(), mismatchOperation,
+                    OfflineOperationReceipt.Type.PATIENT_CREATE, null, null, null, patient(mismatchCi));
+            asCurrentActor(owner, () -> reservation.reserve(mismatchRequest));
+            var denied = OfflineSyncHttpSupport.send(port, SYNC,
+                    Map.of("input", input(owner, mismatchOperation, mismatchCi)), intruder.token(), null, null);
+            OfflineSyncHttpSupport.error(denied, "SESSION_ACTOR_MISMATCH");
+            // Behaviour is unchanged: the owner's intent keeps its exact previous state.
+            assertThat(status(owner, mismatchOperation).path("state").asText()).isEqualTo("PREPARED");
+            assertThat(appender.list).hasSize(1);
+            var mismatch = appender.list.get(0);
+            assertThat(mismatch.getLevel().toString()).isEqualTo("WARN");
+            assertThat(mismatch.getArgumentArray()).hasSize(3);
+            assertThat(mismatch.getArgumentArray()[0]).isEqualTo(mismatchOperation);
+            assertThat(mismatch.getArgumentArray()[1]).isEqualTo("SESSION_ACTOR_MISMATCH");
+            assertThat((String) mismatch.getArgumentArray()[2]).endsWith("$SessionActorMismatchNoWrite");
+
+            // Degraded case 2: the statement runs but changes no row, because a CONFIRMED intent is immutable.
+            UUID confirmedOperation = UUID.randomUUID();
+            String ciNit = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+            assertThat(sync(owner, input(owner, confirmedOperation, ciNit)).path("state").asText())
+                    .isEqualTo("CONFIRMED");
+            var confirmedRequest = new OfflineOperationRequest(owner.id(), confirmedOperation,
+                    OfflineOperationReceipt.Type.PATIENT_CREATE, null, null, null, patient(ciNit));
+            var confirmedBefore = status(owner, confirmedOperation);
+            appender.list.clear();
+            asCurrentActor(owner, () -> execution.recordDenied(confirmedRequest,
+                    new OfflineSyncFailure("SESSION_EXPIRED")));
+            assertThat(appender.list).hasSize(1);
+            var zeroRows = appender.list.get(0);
+            assertThat(zeroRows.getLevel().toString()).isEqualTo("WARN");
+            assertThat(zeroRows.getArgumentArray()).hasSize(3);
+            assertThat(zeroRows.getArgumentArray()[0]).isEqualTo(confirmedOperation);
+            assertThat(zeroRows.getArgumentArray()[1]).isEqualTo("SESSION_EXPIRED");
+            assertThat((String) zeroRows.getArgumentArray()[2]).endsWith("$NoRowUpdatedNoWrite");
+            // The two degraded cases stay distinguishable, and the confirmed receipt is still untouched.
+            assertThat(zeroRows.getArgumentArray()[2]).isNotEqualTo(mismatch.getArgumentArray()[2]);
+            assertThat(status(owner, confirmedOperation)).isEqualTo(confirmedBefore);
+            assertThat(confirmedBefore.path("state").asText()).isEqualTo("CONFIRMED");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
 }

@@ -10,8 +10,13 @@ import java.sql.SQLException;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * FIX 3 contract: a failed operation is classified from PostgreSQL's <em>structured</em> server error — the
- * SQLState plus the violated constraint identifier — never by scraping the localized prose of the message.
+ * FIX 3 contract: a failed operation is classified from PostgreSQL's <em>structured</em> server error - the
+ * SQLState plus the violated constraint identifier - which is the authoritative path and is always tried first.
+ * The identifier scan over the cause messages is the <em>last resort</em>: its answer is used as final only when
+ * the typed path yields nothing (a shaded, relocated or wrapped driver), so the classification never depends on
+ * the localized prose as its primary signal. Because that scan reads tokens out of the message text, it can also
+ * misread a duplicated VALUE shaped like the constraint name. This class covers both the text-free typed path and
+ * the identifier fallback, including that limitation.
  *
  * <p>Target under contract: a public static helper in the offline application package,
  * {@code com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(Throwable)}, returning a
