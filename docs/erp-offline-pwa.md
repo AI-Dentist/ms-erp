@@ -60,11 +60,12 @@ validation: binary-double rounding must never erase a rejected fractional value.
 The status/journal read foundation passed 12 owner public HTTP/JWT/PostgreSQL
 cases plus all 30 session/preparation/boundary regressions. This exercises
 missing-operation status, current permissions, pinned expiry and unchanged
-business data, not stored-confirmation replay. Offline synchronization cannot yet
-create a confirmation; patient and confirmed-result integration remain pending. The typed `sincronizarOperacionOffline` entry currently reserves immutable intent
-metadata only. Eight new public HTTP/JWT/PostgreSQL intent cases and 46 focused
-regressions passed (54 total), including same-actor retry after a new login 48 hours
-later. `PREPARED` is metadata, never patient registration or a payment. It checks the frozen canonical hash and never
+business data; stored-confirmation replay was added in the patient slice below.
+The typed `sincronizarOperacionOffline` entry first commits immutable intent
+metadata. Its initial reservation-only slice passed eight public HTTP/JWT/
+PostgreSQL intent cases and 46 regressions (54 total), including same-actor retry
+after a new login 48 hours later. `PREPARED` is metadata, never patient registration
+or a payment. It checks the frozen canonical hash and never
 overwrites a previous actor/operation identity on payload/type conflict.
 Patient execution and its `CONFIRMED` receipt passed 19 owner focused HTTP/JWT/
 PostgreSQL cases (11 patient and 8 injected-failure intent cases), then all 65 scoped
@@ -76,8 +77,10 @@ The facade commits reservation first, then invokes the existing patient use case
 and stores patient-ID mapping plus confirmation in the same business transaction.
 Recovery records rejection/retry metadata only after that transaction rolls back.
 Only a committed `CONFIRMED` result means registered; keep `PREPARED` pending.
-Manual-order and financial handlers remain unavailable (reservation metadata only).
-Independent verification and business-transaction integration remain pending. Preparation errors use GraphQL `extensions.code`:
+Manual-order execution is now covered by 15 owner HTTP/JWT/PostgreSQL cases and
+an 80/80 scoped run (76 HTTP plus four codec checks). Cash/expense handlers remain
+unavailable (reservation metadata only); financial integration and final independent
+security/concurrency verification remain pending. Preparation errors use GraphQL `extensions.code`:
 `ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
 Confirmation additionally classifies failures as `FRESH_LOGIN_REQUIRED`,
 `SESSION_UNAVAILABLE`, `SESSION_ACTOR_MISMATCH`, `SESSION_ALREADY_BOUND` or
@@ -325,3 +328,26 @@ Implementation slices: session/boundary; durable patient replay; order refs/pric
 cash/expense atomic expectations; one final security/concurrency verification.
 Each code slice carries public HTTP/JWT tests/docs and observed RED/GREEN; preserve
 legacy controls and WIP. This contract publication alone is not runtime proof.
+
+### Manual-order execution (owner verified)
+
+The dedicated handler resolves only the caller's confirmed patient-operation
+mapping, without rewriting the frozen reference/hash. Missing/pending or conflicted
+parents block the child; another actor's mapping is not used. Active patient,
+optional dentist and sorted service rows are held with PostgreSQL `FOR SHARE`
+through the unchanged manual-order use case and durable confirmation. Price/total
+expectations must match exactly; negative, sub-cent and `NUMERIC(12,2)` overflow
+amounts are rejected before the existing Money rounding. Contado quota mappings
+come from the actual persisted order, not generated client identifiers.
+
+The first 15 public HTTP/JWT/PostgreSQL tests produced 15 assertion failures and
+zero errors/skips against reservation-only behavior. The first implementation run
+passed nine and failed six on a test-only JSON-number formatting assumption
+(`241.0` versus `241.00`); the assertions now compare exact decimal values without
+rounding or tolerance. The corrected scoped run passed all 80 checks, with no
+failures/errors/skips. Its 15 manual-order cases prove current allowed roles,
+persisted amounts/quota mappings and replay, stale/invalid money with no effects,
+inactive references, blocked/failed/foreign parents and subsequent resolution,
+contention with the unchanged online tariff updater, and post-confirmation rollback
+before a successful identical retry. This is owner evidence, not independent review.
+Cash/expense execution and final independent verification remain pending.
