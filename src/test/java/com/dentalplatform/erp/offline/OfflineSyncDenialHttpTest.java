@@ -36,8 +36,13 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
 
     private Map<String, Object> input(Session session, UUID operationId, String ciNit) {
         return Map.of("sessionId", session.id().toString(), "operationId", operationId.toString(),
-                "type", "PATIENT_CREATE", "patient", Map.of("ciNit", ciNit,
-                        "nombres", "Denied", "apellidos", "Patient", "telefonoWhatsapp", "+59170012345"));
+                "type", "PATIENT_CREATE", "patient", patient(ciNit));
+    }
+
+    /** The exact frozen patient payload the sync input carries, so a direct reservation hashes the same bytes. */
+    private Map<String, Object> patient(String ciNit) {
+        return Map.of("ciNit", ciNit, "nombres", "Denied", "apellidos", "Patient",
+                "telefonoWhatsapp", "+59170012345");
     }
 
     private JsonNode sync(Session session, Map<String, Object> input) throws Exception {
@@ -100,6 +105,39 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
     }
 
     @Test
+    void anotherCallerCannotBlockTheOwnersIntentByPresentingItsSessionAndOperation() throws Exception {
+        var owner = session("ADMIN", true);
+        var intruder = session("ADMIN", true);
+        UUID operationId = UUID.randomUUID();
+        String ciNit = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        var request = new OfflineOperationRequest(owner.id(), operationId,
+                OfflineOperationReceipt.Type.PATIENT_CREATE, null, null, null, patient(ciNit));
+        // The owner commits its own PREPARED reservation through the same validated identity an HTTP call carries.
+        asCurrentActor(owner, () -> reservation.reserve(request));
+        assertThat(status(owner, operationId).path("state").asText()).isEqualTo("PREPARED");
+        var before = OfflineSyncHttpSupport.snapshot(port);
+
+        // A different authenticated caller presenting the owner's sessionId and operationId is rejected by the
+        // session/actor binding before any business work happens.
+        var denied = OfflineSyncHttpSupport.send(port, SYNC, Map.of("input", input(owner, operationId, ciNit)),
+                intruder.token(), null, null);
+        OfflineSyncHttpSupport.error(denied, "SESSION_ACTOR_MISMATCH");
+
+        // Recording that denial must never reach the owner's row: no other caller, not even with a leaked
+        // sessionId, may move another actor's intent to BLOCKED or overwrite its reason.
+        var untouched = status(owner, operationId);
+        assertThat(untouched.path("state").asText()).isEqualTo("PREPARED");
+        assertThat(untouched.path("reasonCode").isNull()).isTrue();
+        assertThat(untouched.path("result").isNull()).isTrue();
+        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
+
+        // Control: the owner's identical frozen intent was not poisoned and still runs exactly once.
+        var confirmed = sync(owner, input(owner, operationId, ciNit));
+        assertThat(confirmed.path("state").asText()).isEqualTo("CONFIRMED");
+        assertThat(confirmed.path("result").path("patientId").asText()).isNotBlank();
+    }
+
+    @Test
     void unsupportedOperationTypeIsATypedErrorAndNeverAPreparedReceipt() throws Exception {
         var session = session("ADMIN", true);
         UUID operationId = UUID.randomUUID();
@@ -155,6 +193,34 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(status(session, operationId).path("state").asText()).isEqualTo("CONFIRMED");
         var after = OfflineSyncHttpSupport.snapshot(port);
         assertThat(after.path("listarPacientes").size()).isEqualTo(before.path("listarPacientes").size() + 1);
+    }
+
+    @Test
+    void aTerminalConflictKeepsItsDurableBusinessReasonWhenADenialArrivesLater() throws Exception {
+        var session = session("ADMIN", true);
+        String ciNit = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        // The first operation registers the patient, so the second one hits the real duplicate-CI business rule.
+        UUID confirmedOperation = UUID.randomUUID();
+        assertThat(sync(session, input(session, confirmedOperation, ciNit)).path("state").asText())
+                .isEqualTo("CONFIRMED");
+        UUID conflictedOperation = UUID.randomUUID();
+        var conflict = sync(session, input(session, conflictedOperation, ciNit));
+        assertThat(conflict.path("state").asText()).isEqualTo("CONFLICT");
+        assertThat(conflict.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
+        assertThat(conflict.path("result").isNull()).isTrue();
+
+        var request = new OfflineOperationRequest(session.id(), conflictedOperation,
+                OfflineOperationReceipt.Type.PATIENT_CREATE, null, null, null, patient(ciNit));
+        var before = OfflineSyncHttpSupport.snapshot(port);
+        // CONFLICT is terminal for explicit review: a later denial for the same session/operation must not
+        // replace the durable business reason the operator has to resolve, and it must not resurrect a result.
+        asCurrentActor(session, () -> execution.recordDenied(request, new OfflineSyncFailure("PERMISSION_REVOKED")));
+        var unchanged = status(session, conflictedOperation);
+        assertThat(unchanged).isEqualTo(conflict);
+        assertThat(unchanged.path("state").asText()).isEqualTo("CONFLICT");
+        assertThat(unchanged.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
+        assertThat(unchanged.path("result").isNull()).isTrue();
+        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
     }
 
     @Test

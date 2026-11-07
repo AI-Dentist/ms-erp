@@ -69,19 +69,25 @@ public class JdbcOfflineOperationStore implements OfflineOperationStore {
                 && state != OfflineOperationReceipt.State.BLOCKED) throw new IllegalArgumentException("Invalid failure state");
         jdbc.update("""
                 UPDATE offline_operation_receipts SET state = ?, reason_code = ?, result_json = NULL, confirmed_at = NULL
-                WHERE actor_id = ? AND operation_id = ? AND state <> 'CONFIRMED'
+                WHERE actor_id = ? AND operation_id = ? AND state IN ('PREPARED', 'BLOCKED')
                 """, state.name(), reason, actorId, operationId);
     }
 
     @Override
-    public void recordSessionDenial(UUID sessionId, UUID operationId, String reason) {
+    public void recordSessionDenial(UUID sessionId, UUID operationId, String reason,
+                                    String callerIssuer, String callerSubject) {
+        // The caller's validated principal must match BOTH the session and the reservation identity, so a
+        // denial can never mutate another actor's ledger by presenting their identifiers. CONFLICT is a
+        // terminal business classification and is never rewritten into a retryable state.
         jdbc.update("""
                 UPDATE offline_operation_receipts r
                 SET state = 'BLOCKED', reason_code = ?, result_json = NULL, confirmed_at = NULL
                 FROM offline_sync_sessions s
                 WHERE s.session_id = ? AND r.actor_id = s.actor_id AND r.operation_id = ?
-                  AND r.state <> 'CONFIRMED'
-                """, reason, sessionId, operationId);
+                  AND s.issuer = ? AND s.subject = ?
+                  AND r.identity_issuer = ? AND r.identity_subject = ?
+                  AND r.state IN ('PREPARED', 'BLOCKED')
+                """, reason, sessionId, operationId, callerIssuer, callerSubject, callerIssuer, callerSubject);
     }
 
     @Override

@@ -32,6 +32,24 @@ public class OfflineSyncIdentityAdapter implements OfflineSyncIdentityPort {
     }
 
     @Override
+    public Principal principal() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication instanceof JwtAuthenticationToken jwt) || !jwt.isAuthenticated()
+                || jwt.getToken().getIssuer() == null || jwt.getToken().getSubject() == null
+                || jwt.getToken().getSubject().isBlank()) {
+            throw new OfflineSyncFailure("ACTOR_UNAVAILABLE");
+        }
+        String issuer = jwt.getToken().getIssuer().toString();
+        String configuredIssuer = environment.getProperty(environment.matchesProfiles("local")
+                ? "erp.security.local-dev-user.jwt-issuer-uri"
+                : "spring.security.oauth2.resourceserver.jwt.issuer-uri");
+        if (configuredIssuer == null || configuredIssuer.isBlank() || !issuer.equals(configuredIssuer.trim())) {
+            throw new OfflineSyncFailure("ACTOR_UNAVAILABLE");
+        }
+        return new Principal(issuer, jwt.getToken().getSubject());
+    }
+
+    @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public Caller current() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();

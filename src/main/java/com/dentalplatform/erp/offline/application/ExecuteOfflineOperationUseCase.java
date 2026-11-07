@@ -80,7 +80,8 @@ public class ExecuteOfflineOperationUseCase {
         if (current.state() != OfflineOperationReceipt.State.PREPARED
                 && current.state() != OfflineOperationReceipt.State.BLOCKED) return current;
         var handler = handlers.get(request.type());
-        if (handler == null) return current;
+        // The missing-handler invariant lives here too, so a future caller cannot receive a PREPARED receipt.
+        if (handler == null) throw new OfflineSyncFailure("INVALID_INPUT");
         var result = handler.execute(request.payload(), locked.context().caller().actorId());
         sessions.requireConfirmed(request.sessionId());
         operations.confirm(locked.context().caller().actorId(), request.operationId(), result,
@@ -95,12 +96,15 @@ public class ExecuteOfflineOperationUseCase {
      * The live identity port needs its own transaction, so this runs isolated from the rolled-back execution.
      */
     public void recordDenied(OfflineOperationRequest request, OfflineSyncFailure denial) {
-        if (request == null || request.operationId() == null) return;
+        if (request == null || request.operationId() == null || request.sessionId() == null) return;
+        // A session/actor mismatch means the caller is not the owner: write nothing at all.
+        if ("SESSION_ACTOR_MISMATCH".equals(denial.code())) return;
         try {
+            var caller = identities.principal();
             // An explicit template keeps this write out of the failed execution while making every failure,
             // including a commit-time unexpected rollback, non-fatal: the original denial stays the response.
-            requiresNew.executeWithoutResult(status ->
-                    operations.recordSessionDenial(request.sessionId(), request.operationId(), denial.code()));
+            requiresNew.executeWithoutResult(status -> operations.recordSessionDenial(request.sessionId(),
+                    request.operationId(), denial.code(), caller.issuer(), caller.subject()));
         } catch (RuntimeException unavailableIdentityOrLedger) {
             // Never convert the denial into a success or into a different error.
         }
