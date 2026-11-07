@@ -1,23 +1,31 @@
 package com.dentalplatform.erp.offline;
 
+import com.dentalplatform.erp.configsecurity.application.port.OfflineSyncIdentityPort;
+import com.dentalplatform.erp.offline.application.ConfirmOfflineSyncUseCase;
 import com.dentalplatform.erp.offline.application.ExecuteOfflineOperationUseCase;
 import com.dentalplatform.erp.offline.application.OfflineOperationRequest;
+import com.dentalplatform.erp.offline.application.OfflineOperationStore;
+import com.dentalplatform.erp.offline.application.OfflinePayloadCodec;
 import com.dentalplatform.erp.offline.application.ReserveOfflineOperationUseCase;
 import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
 import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +36,12 @@ import static org.mockito.Mockito.doReturn;
 class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
     @MockitoSpyBean ExecuteOfflineOperationUseCase execution;
     @MockitoSpyBean ReserveOfflineOperationUseCase reservation;
+    // Real collaborators, so a use case built inside a test runs the production lock, ledger and clock paths.
+    @Autowired ConfirmOfflineSyncUseCase sessions;
+    @Autowired OfflineOperationStore operations;
+    @Autowired OfflineSyncIdentityPort identities;
+    @Autowired OfflinePayloadCodec codec;
+    @Autowired PlatformTransactionManager transactionManager;
     private static final String FIELDS = "operationId type state payloadHash reasonCode result { patientId }";
     private static final String SYNC = "mutation($input:OfflineOperationInput!){sincronizarOperacionOffline(input:$input){"
             + FIELDS + "}}";
@@ -116,6 +130,7 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
         asCurrentActor(owner, () -> reservation.reserve(request));
         assertThat(status(owner, operationId).path("state").asText()).isEqualTo("PREPARED");
         var before = OfflineSyncHttpSupport.snapshot(port);
+        var beforeLedger = OfflineSyncHttpSupport.offlineLedger();
 
         // A different authenticated caller presenting the owner's sessionId and operationId is rejected by the
         // session/actor binding before any business work happens.
@@ -130,6 +145,8 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(untouched.path("reasonCode").isNull()).isTrue();
         assertThat(untouched.path("result").isNull()).isTrue();
         assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
+        // The ledger table itself is unchanged, so no denial row was written for the owner's intent.
+        assertThat(OfflineSyncHttpSupport.offlineLedger()).isEqualTo(beforeLedger);
 
         // Control: the owner's identical frozen intent was not poisoned and still runs exactly once.
         var confirmed = sync(owner, input(owner, operationId, ciNit));
@@ -221,6 +238,104 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(unchanged.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
         assertThat(unchanged.path("result").isNull()).isTrue();
         assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
+    }
+
+    /**
+     * FIX 3 decision: a reservation conflict is a durable classification of the intent that already exists, not a
+     * transient response. Today the row stays PREPARED with a null reason, so the status endpoint hides the
+     * conflict the operator has to resolve, and a client that only reads status retries a payment blind.
+     */
+    @Test
+    void aReservationConflictIsRecordedOnTheExistingIntentAndStillLeavesItExecutable() throws Exception {
+        var session = session("ADMIN", true);
+        UUID operationId = UUID.randomUUID();
+        String frozenCi = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        String alteredCi = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        var request = new OfflineOperationRequest(session.id(), operationId,
+                OfflineOperationReceipt.Type.PATIENT_CREATE, null, null, null, patient(frozenCi));
+        // Reserved and deliberately NOT confirmed: an interrupted sync leaves exactly this bare PREPARED row,
+        // which is the state a conflict must never leave behind without its reason code.
+        asCurrentActor(session, () -> reservation.reserve(request));
+        assertThat(status(session, operationId).path("state").asText()).isEqualTo("PREPARED");
+        assertThat(status(session, operationId).path("reasonCode").isNull()).isTrue();
+        var before = OfflineSyncHttpSupport.snapshot(port);
+        var beforeLedger = OfflineSyncHttpSupport.offlineLedger();
+
+        // The client resends the SAME operationId with a different frozen payload.
+        var conflict = send(session, input(session, operationId, alteredCi));
+        assertThat(conflict.path("state").asText()).isEqualTo("CONFLICT");
+        assertThat(conflict.path("reasonCode").asText()).isEqualTo("PAYLOAD_MISMATCH");
+        assertThat(conflict.path("result").isNull()).isTrue();
+
+        // The conflict is recorded on the existing row with the same PREPARED|BLOCKED guard a denial uses, so the
+        // status endpoint never reports a bare PREPARED with a null reason.
+        var recorded = status(session, operationId);
+        assertThat(recorded.path("state").asText()).isEqualTo("BLOCKED");
+        assertThat(recorded.path("reasonCode").asText()).isEqualTo("PAYLOAD_MISMATCH");
+        assertThat(recorded.path("type").asText()).isEqualTo("PATIENT_CREATE");
+        // The frozen intent is untouched: only state and reason moved.
+        assertThat(recorded.path("payloadHash").asText()).isEqualTo(conflict.path("payloadHash").asText());
+        assertThat(recorded.path("result").isNull()).isTrue();
+        var ledger = OfflineSyncHttpSupport.offlineLedger();
+        assertThat(ledger.size()).isEqualTo(beforeLedger.size());
+        JsonNode frozenRow = null;
+        for (JsonNode row : ledger) if (row.path("operationId").asText().equals(operationId.toString())) frozenRow = row;
+        assertThat(frozenRow).as("the conflict must be recorded on the existing reservation").isNotNull();
+        assertThat(frozenRow.path("type").asText()).isEqualTo("PATIENT_CREATE");
+        assertThat(frozenRow.path("state").asText()).isEqualTo("BLOCKED");
+        assertThat(frozenRow.path("reasonCode").asText()).isEqualTo("PAYLOAD_MISMATCH");
+        // No business effect was written for the rejected intent.
+        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
+
+        // BLOCKED is still executable, so the original frozen intent confirms exactly once.
+        var confirmed = sync(session, input(session, operationId, frozenCi));
+        assertThat(confirmed.path("state").asText()).isEqualTo("CONFIRMED");
+        assertThat(confirmed.path("payloadHash").asText()).isEqualTo(conflict.path("payloadHash").asText());
+        assertThat(confirmed.path("result").path("patientId").asText()).matches("[0-9a-f-]{36}");
+        assertThat(OfflineSyncHttpSupport.snapshot(port).path("listarPacientes").size())
+                .isEqualTo(before.path("listarPacientes").size() + 1);
+        // Lost acknowledgement: the same frozen intent answers with the same confirmation and no second patient.
+        assertThat(sync(session, input(session, operationId, frozenCi))).isEqualTo(confirmed);
+        assertThat(OfflineSyncHttpSupport.snapshot(port).path("listarPacientes").size())
+                .isEqualTo(before.path("listarPacientes").size() + 1);
+        // A denial arriving after the confirmation cannot rewrite the confirmed receipt.
+        asCurrentActor(session, () -> execution.recordDenied(request, new OfflineSyncFailure("SESSION_EXPIRED")));
+        assertThat(status(session, operationId)).isEqualTo(confirmed);
+    }
+
+    /**
+     * FIX 4(b) guard: the missing-handler invariant also lives in execute(). The reachable facade check cannot
+     * prove it, so the use case is built here without any handler and asked to execute a real frozen reservation.
+     */
+    @Test
+    void executeRejectsAFrozenTypeWithoutAHandlerInsteadOfReturningPrepared() throws Exception {
+        var session = session("ADMIN", true);
+        UUID operationId = UUID.randomUUID();
+        String ciNit = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        var request = new OfflineOperationRequest(session.id(), operationId,
+                OfflineOperationReceipt.Type.PATIENT_CREATE, null, null, null, patient(ciNit));
+        asCurrentActor(session, () -> reservation.reserve(request));
+        assertThat(status(session, operationId).path("state").asText()).isEqualTo("PREPARED");
+        var withoutHandlers = new ExecuteOfflineOperationUseCase(sessions, operations, identities, codec, clock,
+                transactionManager, List.of());
+        var transactions = new TransactionTemplate(transactionManager);
+        var thrown = new AtomicReference<Throwable>();
+        // Running the un-proxied instance inside a real transaction keeps the production row locks in play, so the
+        // call reaches the handler lookup instead of failing earlier for lack of a transaction.
+        asCurrentActor(session, () -> {
+            try {
+                transactions.execute(status -> withoutHandlers.execute(request));
+            } catch (RuntimeException failure) {
+                thrown.set(failure);
+            }
+        });
+        assertThat(thrown.get()).isInstanceOf(OfflineSyncFailure.class);
+        assertThat(((OfflineSyncFailure) thrown.get()).code()).isEqualTo("INVALID_INPUT");
+        // The rejected execution wrote nothing: the frozen reservation is still the untouched PREPARED intent.
+        var untouched = status(session, operationId);
+        assertThat(untouched.path("state").asText()).isEqualTo("PREPARED");
+        assertThat(untouched.path("reasonCode").isNull()).isTrue();
+        assertThat(untouched.path("result").isNull()).isTrue();
     }
 
     @Test

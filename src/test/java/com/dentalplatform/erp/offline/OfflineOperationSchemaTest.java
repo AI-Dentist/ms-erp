@@ -28,6 +28,23 @@ class OfflineOperationSchemaTest extends OfflineOperationHttpTestSupport {
                 """, actor, operation, "a".repeat(64));
     }
 
+    private void insertSession(UUID session, UUID actor, String issuer, String subject) {
+        jdbc.update("""
+                INSERT INTO offline_sync_sessions
+                    (session_id, actor_id, issuer, subject, workspace_id, device_id,
+                     reauth_not_before, challenge_expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, now(), now() + interval '1 hour')
+                """, session, actor, issuer, subject, UUID.randomUUID(), UUID.randomUUID());
+    }
+
+    /** The stored state and reason of one ledger row, or a failure if the row disappeared. */
+    private String denialRow(UUID actor, UUID operation) {
+        return jdbc.queryForObject("""
+                SELECT state || '|' || coalesce(reason_code, '-')
+                FROM offline_operation_receipts WHERE actor_id = ? AND operation_id = ?
+                """, String.class, actor, operation);
+    }
+
     private Object rewritten(String column) {
         return switch (column) {
             case "actor_id", "operation_id" -> UUID.randomUUID();
@@ -37,6 +54,44 @@ class OfflineOperationSchemaTest extends OfflineOperationHttpTestSupport {
             case "payload_hash" -> "b".repeat(64);
             default -> "rewritten";
         };
+    }
+
+    /**
+     * FIX 4(a) guard: the denial write is scoped by the session identity (s.issuer, s.subject) <em>and</em> by the
+     * frozen reservation identity (r.identity_issuer, r.identity_subject). Deleting either predicate would let a
+     * caller that only knows an actor's sessionId and operationId move another identity's intent to BLOCKED.
+     */
+    @Test
+    void denialWritesNothingUnlessTheCallerOwnsBothTheSessionAndTheReservation() throws Exception {
+        UUID owner = UUID.fromString(OfflineSyncHttpSupport.createUser(port, "ADMIN").id());
+        UUID operation = UUID.randomUUID();
+        UUID ownerSession = UUID.randomUUID();
+        UUID foreignSession = UUID.randomUUID();
+        String issuer = "https://synthetic-issuer";
+        String ownerSubject = "synthetic-subject";
+        String callerSubject = "synthetic-intruder";
+        insert(owner, operation);
+        insertSession(ownerSession, owner, issuer, ownerSubject);
+        insertSession(foreignSession, owner, issuer, callerSubject);
+        try {
+            // Same session row, but the caller's validated subject is not the session's subject.
+            operations.recordSessionDenial(ownerSession, operation, "SESSION_EXPIRED", issuer, callerSubject);
+            assertThat(denialRow(owner, operation)).isEqualTo("PREPARED|-");
+            // Same subject from another issuer: an identity of a different realm is not the owner either.
+            operations.recordSessionDenial(ownerSession, operation, "SESSION_EXPIRED", "https://other-issuer", ownerSubject);
+            assertThat(denialRow(owner, operation)).isEqualTo("PREPARED|-");
+            // The session matches this caller, but the reservation was frozen under another identity, so the
+            // reservation predicates alone must still refuse the write.
+            operations.recordSessionDenial(foreignSession, operation, "SESSION_EXPIRED", issuer, callerSubject);
+            assertThat(denialRow(owner, operation)).isEqualTo("PREPARED|-");
+            // Control: the matching principal still records its own denial.
+            operations.recordSessionDenial(ownerSession, operation, "SESSION_EXPIRED", issuer, ownerSubject);
+            assertThat(denialRow(owner, operation)).isEqualTo("BLOCKED|SESSION_EXPIRED");
+        } finally {
+            jdbc.update("DELETE FROM offline_operation_receipts WHERE actor_id = ? AND operation_id = ?", owner, operation);
+            jdbc.update("DELETE FROM offline_sync_sessions WHERE session_id = ? OR session_id = ?",
+                    ownerSession, foreignSession);
+        }
     }
 
     @Test

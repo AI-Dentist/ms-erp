@@ -44,10 +44,16 @@ final class OfflineSyncHttpSupport {
               obtenerFlujoCaja(fechaInicio: "1970-01-01T00:00:00Z", fechaFin: "9999-01-01T00:00:00Z") {
                 totalIngresosBs totalEgresosBs saldoNetoBs movimientos { id tipoMovimiento montoBs recibo { id } } } }
             """;
+    /**
+     * Database the offline fixtures are configured against, captured when a test class declares its dynamic
+     * properties. The ledger section is read from this same database, never from a second or stand-in one.
+     */
+    private static volatile String fixtureDatabase;
 
     private OfflineSyncHttpSupport() { }
 
     static void configure(DynamicPropertyRegistry registry, String database) throws Exception {
+        fixtureDatabase = database;
         try (Connection connection = EmbeddedPostgresSupport.postgres().getPostgresDatabase().getConnection();
              var statement = connection.createStatement()) {
             if (!statement.executeQuery("SELECT 1 FROM pg_database WHERE datname='" + database + "'").next()) {
@@ -124,6 +130,38 @@ final class OfflineSyncHttpSupport {
 
     static JsonNode snapshot(int port) throws Exception {
         return success(port, SNAPSHOT, Map.of(), adminToken());
+    }
+
+    /**
+     * The durable offline sync journal exactly as the isolated PostgreSQL fixture holds it: one entry per receipt
+     * with its operation id, frozen type, state and reason code. No GraphQL query exposes the journal, so a
+     * "nothing was written" claim built only on {@link #snapshot(int)} cannot see a PREPARED, BLOCKED or CONFLICT
+     * receipt; this section makes the table itself the evidence and is deliberately ordered by the ledger's own
+     * primary key so two reads of an unchanged table are equal.
+     */
+    static JsonNode offlineLedger() {
+        var rows = new java.util.ArrayList<Map<String, Object>>();
+        String database = fixtureDatabase;
+        if (database == null) throw new IllegalStateException("Offline fixtures never configured a database");
+        try (Connection connection = java.sql.DriverManager.getConnection(
+                EmbeddedPostgresSupport.jdbcUrl(database), "postgres", "postgres");
+             var statement = connection.createStatement();
+             var receipts = statement.executeQuery("""
+                     SELECT operation_id, operation_type, state, reason_code
+                     FROM offline_operation_receipts ORDER BY actor_id, operation_id
+                     """)) {
+            while (receipts.next()) {
+                var row = new java.util.LinkedHashMap<String, Object>();
+                row.put("operationId", receipts.getString("operation_id"));
+                row.put("type", receipts.getString("operation_type"));
+                row.put("state", receipts.getString("state"));
+                row.put("reasonCode", receipts.getString("reason_code"));
+                rows.add(row);
+            }
+            return JSON.readTree(JSON.writeValueAsString(rows));
+        } catch (java.sql.SQLException unavailable) {
+            throw new IllegalStateException("Offline ledger is not readable", unavailable);
+        }
     }
 
     static JsonNode success(int port, String query, Map<String, Object> variables, String token) throws Exception {

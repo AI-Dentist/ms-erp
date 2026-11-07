@@ -88,7 +88,12 @@ class OfflineOperationIntentHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(conflict.path("reasonCode").asText()).isEqualTo("PAYLOAD_MISMATCH");
         assertThat(conflict.path("payloadHash").asText()).isEqualTo(original.path("payloadHash").asText());
         assertThat(conflict.path("result").isNull()).isTrue();
-        assertThat(status(session, op)).isEqualTo(original);
+        // The conflicting replay is recorded durably, so status cannot keep reporting a bare PREPARED.
+        var recorded = status(session, op);
+        assertThat(recorded.path("state").asText()).isEqualTo("BLOCKED");
+        assertThat(recorded.path("reasonCode").asText()).isEqualTo("PAYLOAD_MISMATCH");
+        assertThat(recorded.path("payloadHash").asText()).isEqualTo(original.path("payloadHash").asText());
+        assertThat(recorded.path("result").isNull()).isTrue();
         assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
     }
 
@@ -115,7 +120,10 @@ class OfflineOperationIntentHttpTest extends OfflineOperationHttpTestSupport {
                 "operationId", op.toString(), "type", "CASH_EXPENSE", "expense", expense()));
         assertThat(conflict.path("state").asText()).isEqualTo("CONFLICT");
         assertThat(conflict.path("reasonCode").asText()).isEqualTo("OPERATION_TYPE_MISMATCH");
-        assertThat(status(session, op)).isEqualTo(original);
+        var recorded = status(session, op);
+        assertThat(recorded.path("state").asText()).isEqualTo("BLOCKED");
+        assertThat(recorded.path("reasonCode").asText()).isEqualTo("OPERATION_TYPE_MISMATCH");
+        assertThat(recorded.path("payloadHash").asText()).isEqualTo(original.path("payloadHash").asText());
         assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
     }
 

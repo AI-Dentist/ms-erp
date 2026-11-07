@@ -34,6 +34,12 @@ public class SynchronizeOfflineOperationUseCase {
             execution.recordDenied(request, denied);
             throw denied;
         }
+        if (intent.state() == OfflineOperationReceipt.State.CONFLICT) {
+            // A conflicting replay must be durable: otherwise status keeps answering a bare PREPARED with no
+            // reason and a later denial could rewrite a row the client already sees as terminal.
+            execution.recordDenied(request, new OfflineSyncFailure(intent.reasonCode()));
+            return intent;
+        }
         if (intent.state() != OfflineOperationReceipt.State.PREPARED
                 && intent.state() != OfflineOperationReceipt.State.BLOCKED) return intent;
         try {

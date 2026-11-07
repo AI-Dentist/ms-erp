@@ -3,6 +3,7 @@ package com.dentalplatform.erp.offline;
 import com.dentalplatform.erp.mastercatalog.application.usecase.CrearPacienteUseCase;
 import com.dentalplatform.erp.offline.application.OfflineOperationStore;
 import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
+import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -18,6 +19,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -171,6 +173,61 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(conflict.path("result").isNull()).isTrue();
         assertThat(status(session, duplicate)).isEqualTo(conflict);
         assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
+    }
+
+    private static int ledgerRows(JsonNode ledger) {
+        return ledger.isArray() ? ledger.size() : ledger.path("offlineReceipts").size();
+    }
+
+    @Test
+    void thePatientDuplicateClassificationComesFromDataNotFromTheLegacyProse() throws Exception {
+        var session = session("ADMIN", true);
+        var payload = patient();
+        UUID registered = UUID.randomUUID();
+        confirmed(sync(session, registered, payload), registered);
+        // Rewrite the legacy rejection text: the offline classification must not depend on it at all.
+        doAnswer(call -> {
+            throw new com.dentalplatform.erp.shared.domain.exception.BusinessRuleException(
+                    "Regla interna sustituida: el mensaje ya no menciona el CI/NIT");
+        }).when(patients).ejecutar(any());
+        UUID duplicate = UUID.randomUUID();
+        var before = OfflineSyncHttpSupport.snapshot(port);
+        // The ledger legitimately gains ONE row for this rejected attempt; everything else must stay as it was.
+        int ledgerRowsBefore = ledgerRows(OfflineSyncHttpSupport.offlineLedger());
+        JsonNode conflict = sync(session, duplicate, payload);
+        assertThat(conflict.path("state").asText()).isEqualTo("CONFLICT");
+        assertThat(conflict.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
+        assertThat(conflict.path("result").isNull()).isTrue();
+        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
+        var ledgerAfter = OfflineSyncHttpSupport.offlineLedger();
+        assertThat(ledgerRows(ledgerAfter)).isEqualTo(ledgerRowsBefore + 1);
+        JsonNode recorded = null;
+        for (JsonNode row : ledgerAfter) {
+            if (duplicate.toString().equals(row.path("operationId").asText())) recorded = row;
+        }
+        assertThat(recorded).isNotNull();
+        assertThat(recorded.path("state").asText()).isEqualTo("CONFLICT");
+        assertThat(recorded.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
+    }
+
+    /**
+     * Compile-time bridge for this test-first checkpoint: {@code BusinessRuleException} does not carry a stable code
+     * yet, so the contract is read reflectively and a missing accessor fails as a plain assertion instead of
+     * breaking the compile. When the domain exception exposes it, replace this body with
+     * {@code rejected.code()}; the contract name {@code PATIENT_CI_NIT_DUPLICATE} stays identical.
+     */
+    private static String stableDomainCode(BusinessRuleException rejected) {
+        for (String accessor : new String[]{"code", "getCode", "reasonCode"}) {
+            try {
+                if (rejected.getClass().getMethod(accessor).invoke(rejected) instanceof String code) return code;
+            } catch (NoSuchMethodException absent) {
+                // try the next conventional accessor name
+            } catch (ReflectiveOperationException | RuntimeException unavailable) {
+                break;
+            }
+        }
+        return org.assertj.core.api.Assertions.fail("BusinessRuleException must expose the stable domain code "
+                + "(expected PATIENT_CI_NIT_DUPLICATE) so the offline duplicate classification never depends on prose");
     }
 
     @ParameterizedTest

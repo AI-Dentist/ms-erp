@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
 
+import java.sql.SQLException;
+
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -68,6 +70,27 @@ class OfflineFailureClassifierTest {
                 .isNotEqualTo(CI_NIT_CONSTRAINT).isEqualTo("offline_operation_receipts_pkey");
         assertThat(unrelated.getMessage()).contains("pacientes_ci_nit");
         assertThat(reasonCode(unrelated)).isEqualTo("INVALID_INPUT");
+    }
+
+    @Test
+    void theStructuredServerErrorIsFoundAnywhereInTheCauseChainNotOnlyAtTheTop() {
+        // Locks: an intermediary SQLException that carries only SQLState 23505 and no server error must not hide
+        // the real PSQLException deeper in the chain. Today the outer wrapper decides and a genuine CI/NIT
+        // duplicate degrades from PATIENT_DUPLICATE to INVALID_INPUT, so the operator loses the duplicate
+        // classification that the pending item has to show.
+        // The replacement contract keeps this test unchanged: it asserts through the same public entry point,
+        // reasonCode(Throwable); the port-based inspector behind it must scan the whole cause chain for a
+        // structured server error, not only the outermost SQLException.
+        var structured = uniqueViolation(CI_NIT_CONSTRAINT,
+                "duplicate key value violates unique constraint \"" + CI_NIT_CONSTRAINT + "\"",
+                "Key (ci_nit)=(SYN-pacientes_ci_nit-2) already exists.");
+        var outer = new SQLException("duplicate key value violates unique constraint", "23505", structured);
+        // Premise: the outermost exception has no driver server error, only the nested PSQLException does.
+        assertThat(outer.getSQLState()).isEqualTo("23505");
+        assertThat(outer.getCause()).isSameAs(structured);
+        assertThat(((PSQLException) outer.getCause()).getServerErrorMessage().getConstraint())
+                .isEqualTo(CI_NIT_CONSTRAINT);
+        assertThat(reasonCode(outer)).isEqualTo("PATIENT_DUPLICATE");
     }
 
     @Test
