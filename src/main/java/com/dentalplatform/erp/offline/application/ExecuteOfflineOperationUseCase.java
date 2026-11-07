@@ -3,6 +3,8 @@ package com.dentalplatform.erp.offline.application;
 import com.dentalplatform.erp.configsecurity.application.port.OfflineSyncIdentityPort;
 import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -19,6 +21,7 @@ import java.util.Map;
 
 @Service
 public class ExecuteOfflineOperationUseCase {
+    private static final Logger log = LoggerFactory.getLogger(ExecuteOfflineOperationUseCase.class);
     private final ConfirmOfflineSyncUseCase sessions;
     private final OfflineOperationStore operations;
     private final OfflineSyncIdentityPort identities;
@@ -106,7 +109,9 @@ public class ExecuteOfflineOperationUseCase {
             requiresNew.executeWithoutResult(status -> operations.recordSessionDenial(request.sessionId(),
                     request.operationId(), denial.code(), caller.issuer(), caller.subject()));
         } catch (RuntimeException unavailableIdentityOrLedger) {
-            // Never convert the denial into a success or into a different error.
+            // The denial stays the response, but a write that never happened must not look like a mystery later.
+            log.warn("Offline denial reason was not recorded: operationId={} reason={} exceptionClass={}",
+                    request.operationId(), denial.code(), unavailableIdentityOrLedger.getClass().getName());
         }
     }
 

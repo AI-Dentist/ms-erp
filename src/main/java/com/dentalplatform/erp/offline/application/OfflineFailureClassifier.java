@@ -16,7 +16,9 @@ import java.sql.SQLException;
  * (the PostgreSQL driver is a compile-scope dependency, so it is imported directly), then an identifier scan
  * over the cause messages as a last resort for a shaded, relocated or wrapped driver, and only then a
  * permanent INVALID_INPUT with a structured warning so the degradation is observable. Prose is never the
- * primary signal, and a duplicated VALUE can never be mistaken for a constraint name.</p>
+ * primary signal. The identifier scan is a last-resort heuristic: it can misread a duplicated VALUE
+ * shaped like the constraint name, so it is never treated as authoritative, while a real duplicate
+ * still classifies correctly on either path.</p>
  */
 public final class OfflineFailureClassifier {
     private static final Logger log = LoggerFactory.getLogger(OfflineFailureClassifier.class);

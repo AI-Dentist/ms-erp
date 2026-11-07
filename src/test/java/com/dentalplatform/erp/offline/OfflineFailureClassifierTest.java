@@ -146,4 +146,14 @@ class OfflineFailureClassifierTest {
                 .isEqualTo("PATIENT_DUPLICATE");
     }
 
+    @Test
+    void theIdentifierFallbackHeuristicCanMisreadAValueShapedLikeTheConstraint() {
+        // Last-resort path only: with no typed server error the scan sees the VALUE text and reports a duplicate.
+        // Pinned deliberately so the limitation is tested behaviour, never an unstated assumption.
+        var shapedValue = new java.sql.SQLException(
+                "duplicate key: detalle (ci_nit)=(pacientes_ci_nit)", "23505");
+        assertThat(com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(shapedValue))
+                .isEqualTo("PATIENT_DUPLICATE");
+    }
+
 }

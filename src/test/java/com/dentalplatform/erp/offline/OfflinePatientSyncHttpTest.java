@@ -195,7 +195,7 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(observed.get()).as("the legacy duplicate rule must still reject").isNotNull();
         assertThat(observed.get().code())
                 .as("the duplicate decision must be owned by a stable code, not by message text")
-                .isEqualTo("PATIENT_CI_NIT_DUPLICATE");
+                .isEqualTo(com.dentalplatform.erp.shared.domain.exception.BusinessRuleException.PATIENT_CI_NIT_DUPLICATE);
     }
 
     @Test
@@ -242,8 +242,9 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
                     : Map.of("session", session.id().toString(), "op", op.toString());
             var response = OfflineSyncHttpSupport.send(port, query, args, session.token(), null, null);
             OfflineSyncHttpSupport.error(response, code);
-            // A denied caller must not receive the cached confirmed payload or its hash.
+            // A denied caller must receive neither the cached confirmed payload nor its hash, on either endpoint.
             assertThat(response.body()).doesNotContain(original.path("result").path("patientId").asText());
+            assertThat(response.body()).doesNotContain(original.path("payloadHash").asText());
         }
         if (change.equals("role")) {
             String token = OfflineSyncHttpSupport.token(session.actor(), "CAJERO", session.auth().getEpochSecond(),
@@ -252,6 +253,7 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
                     "op", op.toString()), token, null, null);
             OfflineSyncHttpSupport.error(response, "PERMISSION_REVOKED");
             assertThat(response.body()).doesNotContain(original.path("payloadHash").asText());
+            assertThat(response.body()).doesNotContain(original.path("result").path("patientId").asText());
         }
         assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
     }

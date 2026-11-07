@@ -431,15 +431,52 @@ the ten scoped classes (see the commit message for the observed counts); the two
 advisory changes have no separately observable failure path, which is stated instead
 of claimed as a red observation.
 
+### Scoped verification set and its per-class counts
+
+`python target/t6-catalog/run-tests.py <label> seam` selects exactly these thirteen classes
+(the runner holds the list as `SEAM_SCOPE`, so the scope cannot drift with a naming pattern):
+
+| Class | Cases |
+|---|---|
+| OfflineFailureClassifierTest | 8 |
+| OfflineSyncDenialHttpTest | 8 |
+| OfflineOperationSchemaTest | 2 |
+| OfflineOperationIntentHttpTest | 8 |
+| OfflinePatientSyncHttpTest | 14 |
+| OfflineCashExpenseHttpTest | 18 |
+| OfflineCashPaymentHttpTest | 17 |
+| OfflineManualOrderHttpTest | 15 |
+| OfflineOperationStatusHttpTest | 12 |
+| OfflinePayloadCodecTest | 4 |
+| OfflineSyncSessionHttpTest | 15 |
+| OfflineSyncPreparationHttpTest | 5 |
+| OfflineSyncBoundaryLegacyHttpTest | 10 |
+
+The two integration classes `OfflineReplayHttpIntegrationTest` and
+`OfflineActivationHttpIntegrationTest` are excluded: they belong to the earlier accepted slices,
+not to this sync seam. Their exclusion is why the seam reports a smaller number than the whole
+offline test tree.
+
+### Duplicate classification: authoritative path and known heuristic
+
+A duplicate CI/NIT is classified in a fixed order. The authoritative signal is the domain rule
+code (`PATIENT_CI_NIT_DUPLICATE`) or, for a race at the unique index, the PostgreSQL constraint
+name read from the driver's typed server error. When neither is readable - a shaded, relocated
+or wrapped driver - the classifier falls back to scanning the exception messages for the
+constraint identifier. That fallback is a heuristic: it can misread a duplicated VALUE that
+happens to be shaped like the constraint name, in which case a non-duplicate could be reported
+as `PATIENT_DUPLICATE`. A real duplicate still classifies correctly on either path, and a
+unique violation that exposes nothing is a permanent `INVALID_INPUT` with a structured warning,
+never a silent retry.
+
 ### Status after a conflicting reservation
 
 A replay that keeps the same `operationId` but changes the payload, the type or the identity
 link is rejected as `CONFLICT` with `PAYLOAD_MISMATCH`, `OPERATION_TYPE_MISMATCH` or
 `ACTOR_LINK_CHANGED`, and the rejection is recorded durably on the existing intent as
 `BLOCKED` with that reason. `estadoOperacionOffline` therefore answers `BLOCKED` plus the
-reason code after a conflicting replay; it never answers a bare `PREPARED` with a null
-reason. The earlier behaviour, where a conflicting replay left the row `PREPARED` with no
-reason until something else happened, is no longer current.
+reason code after a conflicting replay. The earlier behaviour, where a conflicting replay
+left the row `PREPARED` with no reason until something else happened, is no longer current.
 
 Degraded case, stated instead of promised away: recording the reason is a best-effort write in
 its own transaction. If that write cannot run (unavailable identity, a ledger failure, or an
