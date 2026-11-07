@@ -1,8 +1,10 @@
 package com.dentalplatform.erp.offline.application;
 
+import com.dentalplatform.erp.configsecurity.application.port.OfflineSyncIdentityPort;
 import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -16,14 +18,17 @@ import java.util.Map;
 public class ExecuteOfflineOperationUseCase {
     private final ConfirmOfflineSyncUseCase sessions;
     private final OfflineOperationStore operations;
+    private final OfflineSyncIdentityPort identities;
     private final OfflinePayloadCodec codec;
     private final Clock clock;
     private final Map<OfflineOperationReceipt.Type, OfflineOperationHandler> handlers;
 
     public ExecuteOfflineOperationUseCase(ConfirmOfflineSyncUseCase sessions, OfflineOperationStore operations,
-                                          OfflinePayloadCodec codec, Clock clock, List<OfflineOperationHandler> handlers) {
+                                          OfflineSyncIdentityPort identities, OfflinePayloadCodec codec, Clock clock,
+                                          List<OfflineOperationHandler> handlers) {
         this.sessions = sessions;
         this.operations = operations;
+        this.identities = identities;
         this.codec = codec;
         this.clock = clock;
         this.handlers = new EnumMap<>(OfflineOperationReceipt.Type.class);
@@ -74,6 +79,23 @@ public class ExecuteOfflineOperationUseCase {
         operations.confirm(locked.context().caller().actorId(), request.operationId(), result,
                 clock.instant().truncatedTo(ChronoUnit.MICROS).atOffset(ZoneOffset.UTC));
         return operations.receipt(locked.context().caller().actorId(), request.operationId()).orElseThrow();
+    }
+
+    /**
+     * Records a denial on the existing reservation instead of deleting it: identity, type and payload hash
+     * stay immutable, so a later replay with altered intent still mismatches and never executes. The row moves
+     * to a durable non-success state that keeps a legitimate retry of the same frozen intent possible.
+     * The live identity port needs its own transaction, so this runs isolated from the rolled-back execution.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordDenied(OfflineOperationRequest request, OfflineSyncFailure denial) {
+        if (request == null || request.operationId() == null) return;
+        try {
+            operations.failure(identities.current().actorId(), request.operationId(), denial.code(),
+                    OfflineOperationReceipt.State.BLOCKED);
+        } catch (RuntimeException unavailableIdentity) {
+            // Keep the original denial as the response; never convert it into a success or a new error.
+        }
     }
 
     /** Called through the proxy only AFTER execute has returned exceptionally and rolled back. */

@@ -30,6 +30,7 @@ public class SynchronizeOfflineOperationUseCase {
         try {
             return execution.execute(request);
         } catch (OfflineSyncFailure denied) {
+            execution.recordDenied(request, denied);
             throw denied;
         } catch (RuntimeException failure) {
             if (failure instanceof OfflineOperationConflict conflict) {

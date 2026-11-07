@@ -70,10 +70,11 @@ public class OfflineCashPaymentOperationHandler implements OfflineOperationHandl
                 || !(order.state().equals("PENDIENTE") || order.state().equals("PARCIAL"))) {
             throw conflict("STALE_ORDER");
         }
+        // Parity with the legacy cash case: it pays any pending installment without comparing it
+        // to the order balance, so the offline path must not invent that extra restriction.
         if (!installment.state().equals(String.valueOf(payload.get("expectedQuotaState")))
                 || installment.amount().compareTo(expectedAmount) != 0
-                || !installment.state().equals("PENDIENTE") || installment.amount().signum() <= 0
-                || installment.amount().compareTo(order.amount()) > 0) {
+                || !installment.state().equals("PENDIENTE") || installment.amount().signum() <= 0) {
             throw conflict("STALE_QUOTA");
         }
         var receipt = cash.ejecutar(new CobrarEfectivoCommand(quota, actorId, ci, name));

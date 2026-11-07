@@ -53,6 +53,8 @@ public class JdbcOfflineOperationStore implements OfflineOperationStore {
 
     @Override
     public void confirm(UUID actorId, UUID operationId, OfflineOperationReceipt.Result result, OffsetDateTime at) {
+        // CONFIRMED must always carry a real business result; JSON null would satisfy the NOT NULL check.
+        if (result == null) throw new IllegalArgumentException("Offline confirmation requires a result");
         int changed = jdbc.update("""
                 UPDATE offline_operation_receipts
                 SET state = 'CONFIRMED', result_json = CAST(? AS JSONB), confirmed_at = ?, reason_code = NULL

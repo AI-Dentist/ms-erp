@@ -395,3 +395,31 @@ confirmation SQL followed by one identical retry. Financial focus passed 34/34;
 the final scoped seam passed 114/114 in 231.7 seconds. The suite excludes historical
 T3/T6/n8n/global checks and real providers/containers. Final independent verification
 and the applicable differential are still pending; no native approval is claimed.
+
+### Denial, immutable intent, cash parity and deterministic expense clock
+
+A denial is recorded on the existing reservation instead of deleting it: the row moves to
+`BLOCKED` with the denial code, while `identity_issuer`, `identity_subject`,
+`operation_type`, `canonical_version` and `payload_hash` stay frozen. A later replay with
+the same `operationId` but altered intent therefore still answers `PAYLOAD_MISMATCH`
+(or `OPERATION_TYPE_MISMATCH`) and never executes; a retry of the identical frozen
+intent continues normally. A PostgreSQL trigger rejects any `UPDATE` of those frozen
+columns (or of the key), so the guarantee does not depend on application code alone.
+`confirm(...)` refuses a null result, so `CONFIRMED` always carries a real result.
+
+**Deployment constraint (accepted, not enforced by the schema):** the journal key is
+`(actor_id, operation_id)` where `actor_id` is the ERP `usuarios.id`. Exactly-once replay
+therefore assumes that one identity subject keeps one `usuarios.id`. If an operator
+re-provisions a subject to a new `usuarios.id`, a replay would arrive as a new actor and
+could execute again. Making the guard survive re-provisioning would require binding the
+intent to a stable device/workspace identity, which the frozen contract does not carry in
+the signed intent; that is recorded here as a prerequisite rather than approximated.
+
+`CASH_PAYMENT` no longer compares an installment amount against the current order
+balance: the unchanged cash use case pays any pending installment, so the offline path
+must not add that restriction. Expense validation reuses the injected application
+`Clock` instead of reading the system clock directly. Neither change alters the
+GraphQL contract or legacy commands. Owner checks after these fixes: denial case plus
+the ten scoped classes (see the commit message for the observed counts); the two
+advisory changes have no separately observable failure path, which is stated instead
+of claimed as a red observation.

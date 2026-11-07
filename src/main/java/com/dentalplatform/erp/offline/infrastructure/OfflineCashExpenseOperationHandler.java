@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -32,14 +33,16 @@ public class OfflineCashExpenseOperationHandler implements OfflineOperationHandl
     private final OfflineSyncIdentityPort identities;
     private final OfflineSyncSessionStore sessions;
     private final JdbcTemplate jdbc;
+    private final Clock clock;
     @PersistenceContext private EntityManager entityManager;
 
     public OfflineCashExpenseOperationHandler(RegistrarEgresoCajaUseCase expenses, OfflineSyncIdentityPort identities,
-                                              OfflineSyncSessionStore sessions, JdbcTemplate jdbc) {
+                                              OfflineSyncSessionStore sessions, JdbcTemplate jdbc, Clock clock) {
         this.expenses = expenses;
         this.identities = identities;
         this.sessions = sessions;
         this.jdbc = jdbc;
+        this.clock = clock;
     }
 
     @Override public OfflineOperationReceipt.Type type() { return OfflineOperationReceipt.Type.CASH_EXPENSE; }
@@ -62,7 +65,7 @@ public class OfflineCashExpenseOperationHandler implements OfflineOperationHandl
             method = MetodoPago.valueOf(payload.get("metodoPago").toString());
             // Reuse the existing domain validation before acquiring the ledger lock or writing.
             MovimientoCaja.crear(null, actorId, TipoMovimientoCaja.EGRESO, category, method,
-                    Money.of(amount), description, OffsetDateTime.now());
+                    Money.of(amount), description, OffsetDateTime.now(clock));
         } catch (BusinessRuleException | IllegalArgumentException | ClassCastException | NullPointerException rejected) {
             throw invalid();
         }
