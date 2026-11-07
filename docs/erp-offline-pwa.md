@@ -2,6 +2,17 @@
 
 La activación online autenticada emite un documento firmado para desbloqueo **local** durante hasta ocho horas. No es un JWT de API ni autoriza llamadas al servidor. Este backend no implementa el almacenamiento, PIN ni la aplicación offline.
 
+## Requisito de despliegue obligatorio: una identidad, un `usuarios.id`
+
+La sincronización offline es exactamente-una-vez por `(usuarios.id, operationId)`. Por eso
+**cada subject de identidad debe conservar siempre su mismo `usuarios.id`**. Re-provisionar
+el mismo subject con un `usuarios.id` nuevo crea un actor distinto para el diario, de modo
+que un reenvío de una operación ya confirmada **puede duplicar la acción de negocio**
+(paciente, orden, cobro o egreso repetidos). Esto no lo impide el esquema: es una condición
+operativa que debe respetarse al administrar identidades. Un tombstone ligado a
+dispositivo/workspace no es viable con el contrato firmado actual, porque la intención
+firmada no transporta esos identificadores.
+
 ## Solicitud online
 
 ```graphql
@@ -407,13 +418,9 @@ intent continues normally. A PostgreSQL trigger rejects any `UPDATE` of those fr
 columns (or of the key), so the guarantee does not depend on application code alone.
 `confirm(...)` refuses a null result, so `CONFIRMED` always carries a real result.
 
-**Deployment constraint (accepted, not enforced by the schema):** the journal key is
-`(actor_id, operation_id)` where `actor_id` is the ERP `usuarios.id`. Exactly-once replay
-therefore assumes that one identity subject keeps one `usuarios.id`. If an operator
-re-provisions a subject to a new `usuarios.id`, a replay would arrive as a new actor and
-could execute again. Making the guard survive re-provisioning would require binding the
-intent to a stable device/workspace identity, which the frozen contract does not carry in
-the signed intent; that is recorded here as a prerequisite rather than approximated.
+The journal key is `(actor_id, operation_id)`. Exactly-once replay therefore depends on the
+deployment requirement above: one identity subject must keep one `usuarios.id`; re-provisioning
+it to a new `usuarios.id` can duplicate a confirmed business action.
 
 `CASH_PAYMENT` no longer compares an installment amount against the current order
 balance: the unchanged cash use case pays any pending installment, so the offline path
