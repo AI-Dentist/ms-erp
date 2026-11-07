@@ -78,9 +78,10 @@ and stores patient-ID mapping plus confirmation in the same business transaction
 Recovery records rejection/retry metadata only after that transaction rolls back.
 Only a committed `CONFIRMED` result means registered; keep `PREPARED` pending.
 Manual-order execution is now covered by 15 owner HTTP/JWT/PostgreSQL cases and
-an 80/80 scoped run (76 HTTP plus four codec checks). Cash/expense handlers remain
-unavailable (reservation metadata only); financial integration and final independent
-security/concurrency verification remain pending. Preparation errors use GraphQL `extensions.code`:
+an 80/80 scoped run (76 HTTP plus four codec checks). Cash-payment execution passed
+17 owner HTTP/JWT/PostgreSQL cases. Expense execution is not included in this slice
+(reservation metadata only); final independent security/concurrency verification
+remains pending. Preparation errors use GraphQL `extensions.code`:
 `ACTOR_UNAVAILABLE`, `PERMISSION_REVOKED`, `SESSION_ACTOR_MISMATCH` or `INVALID_INPUT`.
 Confirmation additionally classifies failures as `FRESH_LOGIN_REQUIRED`,
 `SESSION_UNAVAILABLE`, `SESSION_ACTOR_MISMATCH`, `SESSION_ALREADY_BOUND` or
@@ -350,4 +351,24 @@ persisted amounts/quota mappings and replay, stale/invalid money with no effects
 inactive references, blocked/failed/foreign parents and subsequent resolution,
 contention with the unchanged online tariff updater, and post-confirmation rollback
 before a successful identical retry. This is owner evidence, not independent review.
-Cash/expense execution and final independent verification remain pending.
+Cash-payment execution is described below. Expense delivery and final independent
+verification remain pending.
+
+### Cash-payment execution (owner verified)
+
+`CASH_PAYMENT` derives the cashier from the live canonical actor; no cashier field
+is accepted from the client. It resolves only owned, identity-bound confirmed
+manual-order quota mappings, retaining the original frozen reference/hash. It locks
+the order before the quota, rechecks their relationship, and compares exact current
+states, outstanding balance and quota amount before calling the existing cash case.
+Order/quota updates, income, receipt, audit and actual order/movement/receipt ID
+mapping commit with durable confirmation; recovery follows business rollback.
+
+All 17 owner public HTTP/JWT/PostgreSQL cases passed: authorized roles and actor
+capture, stored payment/receipt values, replay/status, stale expectations, invalid
+money, unsupported open-register requirement, blocked/foreign/conflicted/malformed
+parents, cashier-field rejection, concurrent offline sessions, legacy cash-order
+contention and rollback after actual confirmation SQL followed by identical retry.
+The initial shared financial RED had 22 assertion failures and two permission-denial
+passes across 24 cases, with no errors/skips; later controls are regression coverage,
+not separately observed RED. Owner evidence does not replace independent review.
