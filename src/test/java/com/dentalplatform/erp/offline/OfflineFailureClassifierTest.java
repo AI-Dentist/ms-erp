@@ -20,9 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Target under contract: a public static helper in the offline application package,
  * {@code com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(Throwable)}, returning a
- * stable reason code ({@code PATIENT_DUPLICATE}, {@code INVALID_INPUT}, {@code TECHNICAL_RETRY_REQUIRED}). The
- * production code cannot import the driver (it is {@code runtime} scope); these tests can, which is exactly why
- * the fixtures below are real {@link PSQLException} instances built from PostgreSQL's wire-format error response.
+ * stable reason code ({@code PATIENT_DUPLICATE}, {@code INVALID_INPUT}, {@code TECHNICAL_RETRY_REQUIRED}).
+ * Both production and test code import {@link PSQLException} directly, and the fixtures below are real
+ * instances built from PostgreSQL's wire-format error response.
  *
  * <p>Each test name states the contract it locks; the comment above each assertion names the regression the
  * production fix has to prevent.
@@ -30,12 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OfflineFailureClassifierTest {
     private static final String CI_NIT_CONSTRAINT = "pacientes_ci_nit_key";
 
-    /**
-     * Compile-time bridge for this test-first checkpoint: the production helper does not exist yet, so the
-     * contract is invoked reflectively and a missing helper is a plain assertion failure (RED), not a broken
-     * test compile. When {@code OfflineFailureClassifier} lands, replace this method body with
-     * {@code return OfflineFailureClassifier.reasonCode(failure);} — the contract name stays identical.
-     */
+    /** Delegates directly to the production classifier helper. */
     private static String reasonCode(Throwable failure) {
         return com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(failure);
     }

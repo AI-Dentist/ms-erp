@@ -407,6 +407,8 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
             assertThat(appender.list).hasSize(1);
             var mismatch = appender.list.get(0);
             assertThat(mismatch.getLevel().toString()).isEqualTo("WARN");
+            assertThat(mismatch.getFormattedMessage()).contains(mismatchOperation.toString())
+                    .contains("SESSION_ACTOR_MISMATCH").contains("SessionActorMismatchNoWrite");
             assertThat(mismatch.getArgumentArray()).hasSize(3);
             assertThat(mismatch.getArgumentArray()[0]).isEqualTo(mismatchOperation);
             assertThat(mismatch.getArgumentArray()[1]).isEqualTo("SESSION_ACTOR_MISMATCH");
@@ -426,6 +428,8 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
             assertThat(appender.list).hasSize(1);
             var zeroRows = appender.list.get(0);
             assertThat(zeroRows.getLevel().toString()).isEqualTo("WARN");
+            assertThat(zeroRows.getFormattedMessage()).contains(confirmedOperation.toString())
+                    .contains("SESSION_EXPIRED").contains("NoRowUpdatedNoWrite");
             assertThat(zeroRows.getArgumentArray()).hasSize(3);
             assertThat(zeroRows.getArgumentArray()[0]).isEqualTo(confirmedOperation);
             assertThat(zeroRows.getArgumentArray()[1]).isEqualTo("SESSION_EXPIRED");
@@ -434,6 +438,26 @@ class OfflineSyncDenialHttpTest extends OfflineOperationHttpTestSupport {
             assertThat(zeroRows.getArgumentArray()[2]).isNotEqualTo(mismatch.getArgumentArray()[2]);
             assertThat(status(owner, confirmedOperation)).isEqualTo(confirmedBefore);
             assertThat(confirmedBefore.path("state").asText()).isEqualTo("CONFIRMED");
+
+            // Degraded case 3: identity service or ledger throws RuntimeException during recordDenied
+            var brokenIdentities = new com.dentalplatform.erp.configsecurity.application.port.OfflineSyncIdentityPort() {
+                @Override public Caller current() { return null; }
+                @Override public Principal principal() {
+                    throw new IllegalStateException("synthetic identity failure");
+                }
+            };
+            var brokenUseCase = new ExecuteOfflineOperationUseCase(sessions, operations, brokenIdentities,
+                    codec, java.time.Clock.systemUTC(), transactionManager, java.util.List.of());
+            appender.list.clear();
+            brokenUseCase.recordDenied(mismatchRequest, new OfflineSyncFailure("VALIDATION_FAILED"));
+            assertThat(appender.list).hasSize(1);
+            var thrown = appender.list.get(0);
+            assertThat(thrown.getLevel().toString()).isEqualTo("WARN");
+            assertThat(thrown.getFormattedMessage()).contains(mismatchOperation.toString())
+                    .contains("VALIDATION_FAILED").contains("IllegalStateException");
+            assertThat(thrown.getArgumentArray()[0]).isEqualTo(mismatchOperation);
+            assertThat(thrown.getArgumentArray()[1]).isEqualTo("VALIDATION_FAILED");
+            assertThat((String) thrown.getArgumentArray()[2]).isEqualTo(IllegalStateException.class.getName());
         } finally {
             logger.detachAppender(appender);
             appender.stop();
