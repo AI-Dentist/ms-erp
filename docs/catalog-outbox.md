@@ -5,13 +5,13 @@ Catalog creation now commits its aggregate, audit entry and PostgreSQL outbox ev
 ## Delivery contract
 
 - `RabbitMQCatalogEventPublisher.publicar` uses REQUIRED transaction propagation: joins the existing creation transaction, or starts one for standalone publication. Serialization and SQL errors propagate and roll back the transaction; they are not treated as broker outages.
-- V6 creates `catalog_event_outbox`: unique `event_id`, exchange, routing key, JSON payload, creation time, attempts, next attempt time and sent time. The existing event records and their payload fields/routing keys are unchanged.
+- V6 creates `catalog_event_outbox`: unique `event_id`, exchange, routing key, JSON payload, creation time, attempts, next attempt time and sent time. The existing event records and their payload fields/routing keys are unchanged ([SPECS §3.1](../SPECS.md)).
 - Each dispatch call handles at most the configured batch. Each event gets its own REQUIRES_NEW transaction, selecting one due unsent row with `FOR UPDATE SKIP LOCKED`. Other instances skip locked rows. There is no broker I/O in the aggregate-creation transaction.
 - Messages are persistent JSON, with the event UUID as both message ID and correlation ID. Delivery is recorded only after a correlated ACK **and no mandatory return**. ACK plus `NO_ROUTE` is a failure, not success. Spring AMQP 4 sets `CorrelationData.getReturned()` before completing its confirm future.
 - Connection exceptions, NACK, return, timeout and local sender saturation retain the row for retry. A late ACK after timeout cannot mark it delivered. SQL failures during dispatch propagate and roll back its SQL updates.
 - Sent rows are retained. There is no automatic deletion, dead-letter drop or terminal retry limit. Consumers must deduplicate by `eventId`: a crash after broker acceptance but before the SQL commit can cause an **at-least-once duplicate with the same eventId and payload**. This is not exactly-once delivery and does not guarantee global ordering or consumer processing.
 
-## Update and deactivation events
+## Update and deactivation events (contract extension S9)
 
 The same outbox now also carries **updates and logical deactivations** of patients, dentists and offices. Contract note for the MS2/MS3 teams: these are three **new routing keys** on `dental.topic.exchange`; bind a queue to them to receive the changes. Existing `catalogo.*.creado` keys and payloads are unchanged.
 
@@ -29,7 +29,7 @@ The same outbox now also carries **updates and logical deactivations** of patien
 {"eventId": "uuid", "consultorioId": "uuid", "codigo": "CONS-01", "nombre": "Consultorio 1", "estado": "INACTIVO"}
 ```
 
-- Each payload is the corresponding `*.creado` payload plus `activo`; the office payload is identical to `creado` because it already carries `estado`. Every event has a fresh `eventId`, which is also the deduplication key.
+- Each payload is the corresponding `*.creado` payload ([SPECS §3.1](../SPECS.md)) plus `activo`; the office payload is identical to `creado` because it already carries `estado`. Every event has a fresh `eventId`, which is also the deduplication key.
 - **Full state, not a diff**: consumers upsert by the entity id. A deactivation is an `actualizado` event with `activo = false` (patients, dentists) or `estado = "INACTIVO"` (offices, which have no `activo` column). `estado` values: `DISPONIBLE`, `MANTENIMIENTO`, `INACTIVO`.
 - Published inside the update transaction like creations: nothing is enqueued for a rejected or rolled-back operation, and repeating a deactivation on an already inactive entity enqueues nothing. Specialties, services and users publish no events (there is no `*.creado` event for them).
 - Delivery guarantees are the ones above (at-least-once, no global ordering). The payload carries no timestamp, so two updates of one entity that arrive out of order cannot be ordered by content; re-read MS1 (`obtenerPacientePorId`, `listarOdontologos(soloActivos: false)`, `listarConsultorios`) when the final state matters.

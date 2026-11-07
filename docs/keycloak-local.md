@@ -35,7 +35,7 @@ Los tokens llevan `preferred_username` y `realm_access.roles` (lo que lee MS1) y
 | Client ID | Uso | Configuración |
 |---|---|---|
 | `mf-erp` | Angular `http://localhost:4201` | público, *authorization code* + **PKCE S256 obligatorio**; redirect URIs `http://localhost:4201/*`, web origins `http://localhost:4201`; sin *direct access grants*, sin implícito, sin service account |
-| `ms1-local-tests` | pruebas locales de desarrollo | público, **solo *password grant*** (*direct access grants*). **SOLO DESARROLLO/PRUEBAS: nunca importar ni habilitar en producción** |
+| `ms1-local-tests` | tests automáticos y `scripts/local-smoke.sh` | público, **solo *password grant*** (*direct access grants*). **SOLO DESARROLLO/PRUEBAS: nunca importar ni habilitar en producción** |
 
 ## Login del frontend (PKCE)
 

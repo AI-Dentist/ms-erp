@@ -1,12 +1,12 @@
 # Contrato GraphQL: frontend `mf-erp` vs backend `ms-erp`
 
-> **Migración agente/MCP:** `generarReporteInteligente` fue eliminada. Use `ejecutarAgenteErp`, `listarHistorialAgente` y `obtenerEstadoServidorMcp`; las descargas ahora son `/api/v1/reports/export/{reporteId}/{format}`. El conjunto de operaciones del frontend se conserva y marca la consulta antigua como INVALID. Las demás operaciones no cambian.
+> **Migración agente/MCP:** `generarReporteInteligente` fue eliminada. Use `ejecutarAgenteErp`, `listarHistorialAgente` y `obtenerEstadoServidorMcp`; las descargas ahora son `/api/v1/reports/export/{reporteId}/{format}`. El snapshot del frontend se conserva y marca la consulta antigua como INVALID. Las demás operaciones no cambian.
 
 Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/introspection.json`; ambos se verifican contra el esquema real en `SchemaExportTest` (no pueden desfasarse). Los ejemplos válidos están en `src/test/resources/contract/real-examples.graphql` (apéndice al final, validados por `FrontendExamplesValidationTest`). La instantánea de las operaciones del frontend está en `src/test/resources/contract/frontend-operations.graphql`.
 
-**Regla:** fuera de la eliminación solicitada de `generarReporteInteligente` y la nueva ruta de exportación, ningún contrato existente del backend cambia de significado ni de nulabilidad. La extensión de edición y baja lógica añadió, solo de forma aditiva, 11 operaciones de edición/baja, 6 inputs `Actualizar*Input` y el campo `activo: Boolean!` en `Paciente`, `Odontologo`, `Especialidad` y `ServicioOdontologico` (sección "Edición y baja lógica"). Todo lo demás es "qué debe adaptar el frontend"; solo las 3 operaciones de caja/QR sin equivalente siguen requiriendo una decisión.
+**Regla:** fuera de la eliminación solicitada de `generarReporteInteligente` y la nueva ruta de exportación, ningún contrato existente del backend cambia de significado ni de nulabilidad. S9 (2026-10-23) añadió, solo de forma aditiva, 11 operaciones de edición/baja, 6 inputs `Actualizar*Input` y el campo `activo: Boolean!` en `Paciente`, `Odontologo`, `Especialidad` y `ServicioOdontologico` (sección "Edición y baja lógica (S9)"). Todo lo demás es "qué debe adaptar el frontend"; solo las 3 operaciones de caja/QR sin equivalente siguen requiriendo una decisión.
 
-La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `Paciente.genero: String`, nullable, sin cambiar inputs ni permisos. `actualizarPaciente` sigue reemplazando: omitir estos campos los borra; para conservarlos hay que leerlos y reenviarlos (ver [guía](patient-demographic-readback.md)).
+La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `Paciente.genero: String`, nullable, sin cambiar inputs ni permisos. `actualizarPaciente` sigue reemplazando: omitir estos campos los borra; para conservarlos hay que leerlos y reenviarlos (ver [guía](patient-demographic-readback.md)). `docs/graphql/introspection-live.json` es una instantánea histórica, no el contrato canónico actual; no se regenera consultando un servidor compartido.
 
 ## Resumen
 
@@ -15,7 +15,7 @@ La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `P
 | Estado | Operaciones |
 | --- | --- |
 | OK (válidas tal cual) | 2: `listarEspecialidades`, `listarPacientes` |
-| Existe con otra forma → el frontend se adapta | 31: 20 de campos/args/inputs/enums/tipos + las 11 operaciones de edición y baja lógica, que ya existen pero cuyos documentos del frontend siguen usando `ID!`, inputs con otro nombre o campos distintos |
+| Existe con otra forma → el frontend se adapta | 31: 20 de campos/args/inputs/enums/tipos + las 11 operaciones de S9, que ya existen pero cuyos documentos del frontend siguen usando `ID!`, inputs con otro nombre o campos distintos |
 | NO EXISTE en backend | 4 (incluye la consulta de reportes eliminada) |
 
 ### Operaciones que el backend NO ofrece
@@ -26,10 +26,10 @@ La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `P
 | `listarLogsAuditoria` | **Adaptar frontend**: usar `listarAuditLogs(limite)`. |
 | `obtenerResumenCaja`, `listarMovimientosCaja` | **Adaptar frontend**: una sola llamada `obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!)` devuelve `totalIngresosBs/totalEgresosBs/saldoNetoBs` y `movimientos[]`. |
 | `consultarEstadoQrPagoFacil` | **Adaptar frontend (provisional)**: no hay consulta por transacción. Hacer polling de `obtenerOrdenCobroDetalle { cuotas { estado fechaPago } }`; la cuota pasa a `PAGADA` al confirmarse. Para obtener el recibo, `obtenerFlujoCaja { movimientos { recibo {...} } }`. **Decisión pendiente (usuario):** si se quiere un polling directo y barato, hace falta una operación NUEVA (`consultarEstadoQr(pagofacilTransactionId): TransaccionQr!`). |
-| `actualizarPaciente`, `actualizarOdontologo`, `actualizarEspecialidad`, `actualizarConsultorio`, `actualizarServicioOdontologico`, `actualizarUsuario` | **YA EXISTEN.** Adaptar el documento: `$id: UUID!`, input `Actualizar<Entidad>Input` (ver sección edición y baja lógica) y los campos de respuesta reales. |
-| `eliminarPaciente`, `eliminarOdontologo`, `eliminarEspecialidad`, `eliminarConsultorio`, `eliminarServicioOdontologico` | **YA EXISTEN** como **baja lógica** (`activo = false`; consultorio → `estado = INACTIVO`), nunca borran filas. Solo hay que cambiar `$id: ID!` por `$id: UUID!`; devuelven `Boolean!`. |
+| `actualizarPaciente`, `actualizarOdontologo`, `actualizarEspecialidad`, `actualizarConsultorio`, `actualizarServicioOdontologico`, `actualizarUsuario` | **YA EXISTEN (S9).** Adaptar el documento: `$id: UUID!`, input `Actualizar<Entidad>Input` (ver sección S9) y los campos de respuesta reales. |
+| `eliminarPaciente`, `eliminarOdontologo`, `eliminarEspecialidad`, `eliminarConsultorio`, `eliminarServicioOdontologico` | **YA EXISTEN (S9)** como **baja lógica** (`activo = false`; consultorio → `estado = INACTIVO`), nunca borran filas. Solo hay que cambiar `$id: ID!` por `$id: UUID!`; devuelven `Boolean!`. |
 
-(Las 3 que "NO EXISTEN" son: `consultarEstadoQrPagoFacil`, `obtenerResumenCaja` y `listarMovimientosCaja`. `obtenerOrdenCobro` y `listarLogsAuditoria` son renombres y cuentan en las 31 "adaptar", junto con los 6 `actualizar*` y 5 `eliminar*` de edición y baja lógica.)
+(Las 3 que "NO EXISTEN" son: `consultarEstadoQrPagoFacil`, `obtenerResumenCaja` y `listarMovimientosCaja`. `obtenerOrdenCobro` y `listarLogsAuditoria` son renombres y cuentan en las 31 "adaptar", junto con los 6 `actualizar*` y 5 `eliminar*` de S9.)
 
 ## Reglas transversales
 
@@ -42,7 +42,7 @@ La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `P
 | Rangos de caja | `String!` | `DateTime!` | Cambiar tipo de variables y enviar instantes con offset. |
 | Nulabilidad | campos opcionales | casi todo `!`; opcionales reales: `emailContacto`, `Paciente.email/direccion/fechaNacimiento/genero`, `Odontologo.email`, `Consultorio.ubicacion`, `descripcion`, `OrdenCobro.odontologo/consultaExternaId`, `CuotaPago.fechaPago`, `Recibo.pdfUrlS3`, `TransaccionQr.fechaExpiracion`, `MovimientoCaja.recibo` | Que el frontend tolere más campos no nulos de los que modela no rompe nada. Lo que el frontend marca opcional y el backend exige (`telefonoWhatsapp`, `telefono`) hay que volverlo obligatorio en formularios. |
 | Campos extra del backend | — | Campos `!` que el frontend no pide (`reporteId`, `preguntaOriginal`, `enviadoWhatsapp`…) | Sin problema: GraphQL solo devuelve lo pedido. |
-| Roles (servidor) | — | `ANY_ROLE` = ADMIN/CAJERO/RECEPCIONISTA/ODONTOLOGO; lecturas de catálogos y empresa. `ADMIN`: usuarios, auditoría, reportes, actualizar empresa, crear especialidad/odontólogo/consultorio/servicio. `ADMIN`/`RECEPCIONISTA`: `crearPaciente`, `actualizarPaciente`, `eliminarPaciente`. `ADMIN`: `actualizarOdontologo/Especialidad/Consultorio/ServicioOdontologico/Usuario` y `eliminarOdontologo/Especialidad/Consultorio/ServicioOdontologico`. `ADMIN`/`CAJERO`/`RECEPCIONISTA`: lecturas y planes de órdenes de cobro, `crearOrdenCobroManual`, `configurarPlanDePagos`, `obtenerFlujoCaja`. `ADMIN`/`CAJERO`: cobro en efectivo, egreso, QR, simulación, `Recibo.pdfUrlS3`. | Ocultar/deshabilitar acciones según rol; el servidor responde `FORBIDDEN` si no corresponde. |
+| Roles (servidor) | — | `ANY_ROLE` = ADMIN/CAJERO/RECEPCIONISTA/ODONTOLOGO; lecturas de catálogos y empresa. `ADMIN`: usuarios, auditoría, reportes, actualizar empresa, crear especialidad/odontólogo/consultorio/servicio. `ADMIN`/`RECEPCIONISTA`: `crearPaciente`, `actualizarPaciente`, `eliminarPaciente`. `ADMIN` (S9): `actualizarOdontologo/Especialidad/Consultorio/ServicioOdontologico/Usuario` y `eliminarOdontologo/Especialidad/Consultorio/ServicioOdontologico`. `ADMIN`/`CAJERO`/`RECEPCIONISTA`: lecturas y planes de órdenes de cobro, `crearOrdenCobroManual`, `configurarPlanDePagos`, `obtenerFlujoCaja`. `ADMIN`/`CAJERO`: cobro en efectivo, egreso, QR, simulación, `Recibo.pdfUrlS3`. | Ocultar/deshabilitar acciones según rol; el servidor responde `FORBIDDEN` si no corresponde. |
 | `Idempotency-Key` | UUID por mutación | Filtro en `POST` con la cabecera; sin cabecera la petición pasa sin protección | Enviarla siempre en mutaciones financieras. |
 
 ## Catálogos
@@ -55,16 +55,16 @@ La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `P
 | `listarPacientes(busqueda)` | igual, devuelve `[Paciente!]!` | OK | — Ver `ListarPacientes`. |
 | `Odontologo.matricula` | `matriculaProfesional` | renombrar | Cambiar nombre. |
 | `Odontologo.especialidad { id nombre }` | `especialidades: [Especialidad!]!` (lista) | tipo distinto | Pasar a lista; el modelo del frontend admite una sola. |
-| `Odontologo.activo` | `activo: Boolean!`; `listarOdontologos(soloActivos: Boolean = true)` filtra | OK desde edición y baja lógica | Pedirlo tal cual; para ver inactivos pasar `soloActivos: false`. |
+| `Odontologo.activo` | `activo: Boolean!` (S9); `listarOdontologos(soloActivos: Boolean = true)` filtra | OK desde S9 | Pedirlo tal cual; para ver inactivos pasar `soloActivos: false`. |
 | `OdontologoInput {nombres, apellidos, matricula, telefono?, especialidadId?, activo}` | `CrearOdontologoInput`: `ci!, matriculaProfesional!, nombres!, apellidos!, telefono!, email, porcentajeComision: BigDecimal!, especialidadesIds: [UUID!]!` | renombrar + campos nuevos obligatorios | Agregar `ci`, `porcentajeComision`, lista `especialidadesIds`; quitar `activo`. Ver `CrearOdontologo`. |
 | `Especialidad {id nombre descripcion}` | además `codigo: String!` | campo extra | OK al leer; pedir `codigo` si se muestra. |
 | `crearEspecialidad(input: EspecialidadInput!)` | `crearEspecialidad(codigo: String!, nombre: String!, descripcion: String)` — **argumentos sueltos, no hay input** | argumento distinto | Enviar tres argumentos; `codigo` es obligatorio. Ver `CrearEspecialidad`. |
-| `Consultorio.activo` | `estado: String!` con valores `DISPONIBLE`, `MANTENIMIENTO`, `INACTIVO` (`INACTIVO` = baja lógica) | renombrar + tipo distinto | Mapear `activo = estado !== 'INACTIVO'` (lectura; un consultorio en `MANTENIMIENTO` sigue activo). Además hay `codigo!`. |
+| `Consultorio.activo` | `estado: String!` con valores `DISPONIBLE`, `MANTENIMIENTO`, `INACTIVO` (S9; `INACTIVO` = baja lógica) | renombrar + tipo distinto | Mapear `activo = estado !== 'INACTIVO'` (lectura; un consultorio en `MANTENIMIENTO` sigue activo). Además hay `codigo!`. |
 | `ConsultorioInput {nombre, ubicacion, activo}` | `CrearConsultorioInput {codigo!, nombre!, ubicacion}` | renombrar | `codigo` obligatorio; sin `activo`. Ver `CrearConsultorio`. |
 | `ServicioOdontologico.precioBs` | `precioBaseBs: BigDecimal!` | renombrar | Cambiar nombre. |
-| `ServicioOdontologico.activo` | `activo: Boolean!` | OK desde edición y baja lógica | Pedirlo tal cual. |
+| `ServicioOdontologico.activo` | `activo: Boolean!` (S9) | OK desde S9 | Pedirlo tal cual. |
 | `ServicioOdontologicoInput` | `CrearServicioInput {especialidadId, codigo!, nombre!, descripcion, precioBaseBs!}` | renombrar | Ver `CrearServicioOdontologico`. `listarServiciosOdontologicos(especialidadId: UUID)` admite filtro. |
-| `actualizar*`/`eliminar*` de paciente, odontólogo, especialidad, consultorio, servicio | existen desde edición y baja lógica | renombrar inputs / `ID!`→`UUID!` | Ver sección "Edición y baja lógica". |
+| `actualizar*`/`eliminar*` de paciente, odontólogo, especialidad, consultorio, servicio | existen desde S9 | renombrar inputs / `ID!`→`UUID!` | Ver sección "Edición y baja lógica (S9)". |
 
 ## Empresa, usuarios y auditoría
 
@@ -73,7 +73,7 @@ La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `P
 | `obtenerConfiguracionEmpresa { nit razonSocial direccion telefono email ciudad }` | `{ id nombreComercial razonSocial nit direccion telefonoContacto emailContacto monedaSimbolo }`, tipo `EmpresaConfig!` (no nulo) | renombrar | `telefono`→`telefonoContacto`, `email`→`emailContacto`; **`ciudad` no existe** (la ciudad va dentro de `direccion`). Nuevo `nombreComercial`. |
 | `ConfiguracionEmpresaInput` | `EmpresaConfigInput {nombreComercial!, razonSocial!, nit!, direccion!, telefonoContacto!, emailContacto}` | renombrar + nulabilidad | `direccion` y `telefonoContacto` son obligatorios. Solo ADMIN. Ver `ActualizarConfiguracionEmpresa`. |
 | `listarUsuarios { rol }` (string) | `rol: Rol!` (objeto: `id codigo nombre permisos`) | tipo distinto | Pedir `rol { codigo nombre }` y usar `rol.codigo`. Solo ADMIN. Hay `email!`. |
-| `actualizarUsuario(id, input {rol, activo})` | `actualizarUsuario(id: UUID!, input: ActualizarUsuarioInput!)` con `{rolCodigo: String!, activo: Boolean!, nombreCompleto, email}` (solo ADMIN) | renombrar | `rol`→`rolCodigo`; `activo` es obligatorio; respuesta con `rol { codigo }` (no escalar). Ver sección edición y baja lógica. |
+| `actualizarUsuario(id, input {rol, activo})` | `actualizarUsuario(id: UUID!, input: ActualizarUsuarioInput!)` con `{rolCodigo: String!, activo: Boolean!, nombreCompleto, email}` (S9, solo ADMIN) | renombrar | `rol`→`rolCodigo`; `activo` es obligatorio; respuesta con `rol { codigo }` (no escalar). Ver sección S9. |
 | `listarLogsAuditoria(limite)` | `listarAuditLogs(limite: Int = 50)` | renombrar | Solo ADMIN. |
 | `LogAuditoria {id fecha usuario accion entidad detalle}` | `AuditLog {id accion entidadAfectada entidadId detalleJson createdAt}` | renombrar | `fecha`→`createdAt` (`DateTime`), `entidad`→`entidadAfectada`, `detalle`→`detalleJson` (string JSON); **no hay `usuario`**. |
 
@@ -122,7 +122,7 @@ La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `P
 | `filasJson` | `String!` con un arreglo JSON de filas | OK | `JSON.parse`. |
 | Pregunta "pacientes con cuotas pendientes" | Las vistas de reportes no contienen datos de pacientes | semántica distinta | Para pacientes con cuotas, usar `listarOrdenesCobro`/`listarCuotasPendientesPorPaciente`. Sin proveedor, `dev`/`local` usan un respaldo determinístico etiquetado; en producción falla explícitamente. El respaldo rechaza filtros que no puede representar en vez de descartarlos. |
 
-## Edición y baja lógica
+## Edición y baja lógica (S9)
 
 Operaciones nuevas, todas aditivas. Un `actualizar*` reemplaza **todos** los campos del `Crear*Input` equivalente (un campo opcional omitido se borra); `eliminar*` es **baja lógica**, nunca un `DELETE`.
 
@@ -546,7 +546,7 @@ Variables:
 {"pacienteId": "33333333-3333-4333-8333-333333333333"}
 ```
 
-## Apéndice B: ejemplos de edición y baja lógica
+## Apéndice B: ejemplos de edición y baja lógica (S9)
 
 Ejemplos válidos de las 11 operaciones nuevas. Los ids son marcadores: use los reales de `listar*`.
 

@@ -115,12 +115,17 @@ La creación con esos campos omitidos o explícitamente `null` también devuelve
 - No cambian filtrado de activos, baja lógica, validaciones, auditoría ni outbox.
 - El único cambio de producción son dos campos nullable del SDL; los inputs y la persistencia ya existían. No hay migraciones ni resolvers nuevos.
 - `docs/graphql/schema.graphqls` y `docs/graphql/introspection.json` son los artefactos canónicos generados desde el esquema de la aplicación por `SchemaExportTest` con `-Dcontract.regenerate=true`. No editar introspección a mano.
+- `docs/graphql/introspection-live.json` es una instantánea histórica de un servidor, no evidencia del contrato actual. No se sobrescribe ni se consulta ese servidor para esta unidad.
 
 Los documentos y variables del [contrato comparado](frontend-contract-diff.md) se validan mediante `FrontendExamplesValidationTest`; `PatientDemographicsGraphQLIntegrationTest` verifica persistencia, null, reenvío, compatibilidad y permisos con pacientes sintéticos en PostgreSQL embebido aislado.
 
-## Verificación reproducible
+## Verificación ejecutada
 
-Con JDK 25, ejecute `./mvnw test`. La suite usa PostgreSQL embebido aislado;
-no necesita datos compartidos. `SchemaExportTest` compara los artefactos canónicos
-sin regenerarlos por defecto; los ejemplos y permisos se verifican con las pruebas
-indicadas arriba.
+Con Java 25, todos los comandos usaron `-Derp.build.directory=target/patient-demographic-readback/build -Derp.test.reports.directory=target/patient-demographic-readback/build/reports`:
+
+- RED funcional: `./mvnw <propiedades anteriores> -Dtest=PatientDemographicsGraphQLIntegrationTest test`: 14 fallos por campos ausentes. El intento anterior falló al compilar el fixture; se corrigió el tipo `GraphQlTester.Traversable` antes del RED funcional.
+- GREEN y regeneración: `./mvnw <propiedades anteriores> -Dcontract.regenerate=true -Dtest=PatientDemographicsGraphQLIntegrationTest,SchemaExportTest,FrontendExamplesValidationTest test`: 19 pruebas aprobadas, incluidas las 14 nuevas.
+- Regresión sin regeneración: `./mvnw <propiedades anteriores> test`: 500 pruebas, 0 fallos, 0 errores, 0 omitidas. El validador confirmó 2 operaciones históricas del frontend válidas y 35 inválidas; no se modificó el frontend.
+- Comparación estructural de introspección: únicamente se añaden los dos escalares nullable de `Paciente`; el resto del JSON coincide con el contrato previo. No hay cambios en Java de producción, inputs, permisos ni migraciones.
+- Logs: `target/patient-demographic-readback/{red,red-behavior,green-contracts,full-suite}.log`; los `.exit` asociados preservan los resultados. No se ejecutaron pruebas sobre datos compartidos.
+- La evaluación nativa previa al commit no fue evaluable por las rutas nuevas aún sin seguimiento; no se afirma aprobación nativa. La verificación funcional anterior sí fue ejecutada.

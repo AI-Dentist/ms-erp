@@ -306,11 +306,11 @@ mutation EjecutarAgenteErp($instruccion: String!) {
 }
 ```
 
-### Edición y baja lógica
+### Edición y baja lógica (S9)
 
 Una operación por cada `actualizar*`/`eliminar*` nueva. Un `actualizar*` reemplaza todos los campos del `Crear*Input` equivalente; `eliminar*` es baja lógica (`activo = false`; consultorio → `estado = INACTIVO`), idempotente y devuelve `true`. Reglas, roles y eventos: [frontend-contract-diff.md](frontend-contract-diff.md) y [catalog-outbox.md](catalog-outbox.md).
 
-Cuidado con los datos sembrados: la carga es repetible con `ON CONFLICT DO NOTHING`, así que **no reactiva** lo dado de baja (no hay operación de reactivación salvo `actualizarUsuario` con `activo: true`). Para probar bajas sin perder datos de prueba, cree primero una entidad descartable con `crear*` y use su `id`. `eliminarEspecialidad` sobre `a2…002` responde `BAD_REQUEST` mientras existan servicios u odontólogos activos que la usen (el guardia de edición y baja lógica). `actualizarUsuario` solo funciona con `admin-scz` como actor (`X-Dev-User: admin-scz`) y nadie puede desactivarse a sí mismo.
+Cuidado con los datos sembrados: la carga es repetible con `ON CONFLICT DO NOTHING`, así que **no reactiva** lo dado de baja (no hay operación de reactivación salvo `actualizarUsuario` con `activo: true`). Para probar bajas sin perder datos de prueba, cree primero una entidad descartable con `crear*` y use su `id`. `eliminarEspecialidad` sobre `a2…002` responde `BAD_REQUEST` mientras existan servicios u odontólogos activos que la usen (el guardia de S9). `actualizarUsuario` solo funciona con `admin-scz` como actor (`X-Dev-User: admin-scz`) y nadie puede desactivarse a sí mismo.
 
 #### actualizarPaciente
 

@@ -1,6 +1,6 @@
 # dental-erp-ms1
 
-Backend ERP odontológico: configuración, catálogos, cobros y reportes financieros dinámicos. Java 25, Spring Boot 4, Spring AI 2, PostgreSQL 18 y RabbitMQ 4.
+Backend ERP odontológico: configuración, catálogos, cobros y reportes financieros dinámicos. Java 25, Spring Boot 4, Spring AI 2, PostgreSQL 18 y RabbitMQ 4. Contratos: [SPECS.md](SPECS.md); arquitectura: [AGENTS.md](AGENTS.md).
 
 ## Integración para MS2/MS3
 
@@ -52,7 +52,7 @@ docker compose up -d
 - Los PDF de recibos se guardan en S3 y `Recibo.pdfUrlS3` devuelve una URL prefirmada descargable desde el navegador.
 - Flyway carga también `classpath:db/local` (datos sintéticos); solo este perfil lo hace.
 - **`X-Dev-User: <username>`**: debe ser un usuario `activo` de `usuarios` (p. ej. `admin` del seed). Solo se concede el rol de ese usuario (`ROLE_<codigo>`), de modo que `@PreAuthorize` sigue aplicando (un CAJERO no puede ejecutar mutaciones de ADMIN). Cabecera ausente, vacía, repetida, desconocida o inactiva → `401`. Si llega `Authorization: Bearer`, la cabecera se ignora y el JWT se valida contra `ERP_LOCAL_JWT_ISSUER_URI` (por defecto el Keycloak local `http://localhost:8180/realms/dental-platform`; vacío = Bearer deshabilitado). No existe el administrador anónimo del perfil `dev`.
-- **Keycloak local (solo desarrollo):** `docker compose up -d keycloak` (imagen fija 26.8.1, realm `dental-platform` importado de `docker/keycloak/`, loopback `:8180`). Usuarios `admin-scz`/`caja-scz`/`recepcion-scz` con contraseña de desarrollo `LocalDev2026!`, cliente público PKCE `mf-erp` para `http://localhost:4201` y cliente de pruebas `ms1-local-tests` (*password grant*, nunca en producción). El emisor se resuelve de forma perezosa: MS1 arranca con Keycloak caído y los Bearer reciben `401` hasta que responde. Detalle, claims y `curl` en [docs/keycloak-local.md](docs/keycloak-local.md).
+- **Keycloak local (solo desarrollo):** `docker compose up -d keycloak` (imagen fija 26.8.1, realm `dental-platform` importado de `docker/keycloak/`, loopback `:8180`). Usuarios `admin-scz`/`caja-scz`/`recepcion-scz` con contraseña de desarrollo `LocalDev2026!`, cliente público PKCE `mf-erp` para `http://localhost:4201` y cliente de pruebas `ms1-local-tests` (*password grant*, nunca en producción). El emisor se resuelve de forma perezosa: MS1 arranca con Keycloak caído y los Bearer reciben `401` hasta que responde. Detalle, claims y `curl` en [docs/keycloak-local.md](docs/keycloak-local.md); `scripts/local-smoke.sh` repite las comprobaciones de autorización con Bearer si el emisor responde.
 - CORS: solo el origen `http://localhost:4201` (lista `erp.cors.allowed-origins`, vacía fuera de `local`, nunca `*`), métodos GET/POST/OPTIONS, cabeceras `Authorization, Content-Type, Accept, Idempotency-Key, X-Dev-User`; expone `Idempotency-Replayed` y `Content-Disposition`.
 - Seguridad: la aplicación **no arranca** si `erp.security.local-dev-user.enabled=true` se combina con un perfil distinto de `local`, con `erp.security.dev-mode=true` o si `local` convive con `prod`/`production`. En la cadena por defecto `X-Dev-User` se ignora por completo.
 
@@ -146,18 +146,30 @@ Se mantienen GraphQL y las dos rutas REST de negocio (callback y exportación); 
 | RabbitMQ | PostgreSQL/outbox real; ACK/NACK/retorno/timeout/retry simulados | Wire real, caída/reanudación y saga por listener |
 | Reportes | SQL, permisos, rechazos sin cambios, propiedad/TTL, PDF/XLSX y bloqueo PostgreSQL | Proveedor IA y script de operador vía `psql` |
 
-### Integraciones live optativas
+Ejecución local T11: `./mvnw test` pasó **231/231** (0 fallos/errores/skips, incluye T9/T10/T11); `./mvnw clean compile` compiló **183 fuentes** con exit 0. El enfocado JWT/n8n/idempotencia pasó 25/25 y compiló también `LiveIntegrationsIT` con el perfil activo. `clean` elimina los XML previos de `target`; estos totales proceden de la salida observada, no de una ejecución live.
 
-Con Docker Engine accesible y JDK 25, ejecute `./mvnw -Plive-integrations verify`.
-El perfil ejecuta la suite ordinaria y `LiveIntegrationsIT` con contenedores desechables
-RabbitMQ y SeaweedFS, puertos aleatorios y credenciales efímeras. No lo use contra
-servicios compartidos. Resultados: `target/surefire-reports` y `target/failsafe-reports`.
-Esto no verifica AWS, PagoFácil real ni un proveedor IA desplegado.
+### Integraciones live optativas (no ejecutadas aquí)
+
+Requiere Docker Engine accesible, JDK 25 y acceso a las imágenes/dependencias (o caché previa). No necesita Compose ni credenciales/puertos ambientales:
+
+```bash
+bash scripts/verify-integrations.sh
+# Equivalente directo, sin preflight CLI:
+./mvnw -Plive-integrations verify
+```
+
+El perfil ejecuta la suite ordinaria y Failsafe `LiveIntegrationsIT`: contenedores desechables RabbitMQ 4.1.4 y SeaweedFS 4.48 (S3) con puertos aleatorios y credenciales efímeras. Usa los puertos/dispatcher de la aplicación para upload, GET autenticado, GET presignado, denegación anónima, confirmación outbox, caída/reinicio del broker con retry y entrega saga. Solo controla sus propios contenedores; cierre al finalizar y Ryuk para recuperación. Arranque máximo 120 s por contenedor, comandos broker 30 s, esperas 20 s y fork 600 s. No utilice este harness contra servicios compartidos.
+
+**Última ejecución live (Docker Desktop, SeaweedFS 4.48 + RabbitMQ 4.1.4):** Failsafe `LiveIntegrationsIT` 2/2 (upload S3 real, GET autenticado/presignado, denegación anónima 403; outbox con caída/reinicio del broker y saga). La ejecución de Failsafe se repitió tras corregir dos defectos del propio harness (modo de entrega recibido y espera de la fila de la saga). El script falla con exit 1 si falta Docker: no hay skip silencioso. Resultados ordinarios: `target/surefire-reports`; live: `target/failsafe-reports`. Esto no prueba AWS real ni preparación completa para producción.
+
+### Validación del Co-Piloto ERP/MCP
+
+La refactorización del agente pasó `clean compile` (250 fuentes) y la suite final: **486 tests, cero fallos, errores o skips**. Se usaron directorios de build aislados. Los cinco defectos encontrados por el verificador independiente se reprodujeron, corrigieron y revalidaron: **9/9** comprobaciones dirigidas. El árbol final se conservó idéntico al dividirlo en siete commits; el corte público pasó además **63/63** tests de agente/exportación/contrato.
+
+Las revisiones nativas exigidas por riesgo (corte público y exportaciones) aprobaron con sus acknowledgements consumidos. Los otros rangos devolvieron `reviewDue=false`; eso no se presenta como una aprobación nativa. Historial, commits, comandos fallidos previos y observaciones informativas: [registro de la feature](odd/tasks/ai-copilot-mcp.md).
+
+**Límite de la evidencia:** MCP y el SDK se probaron por HTTP real contra servidores locales aislados, no contra OpenAI/Gemini ni n8n/WhatsApp desplegados. Un check independiente previo del guardrail agotó su límite de 5 s y no se repitió; no se contabiliza como aprobado. No se reinició la instancia compartida ni se ejecutó el smoke mutante sobre sus datos. Para usar el nuevo contrato en esa instancia hay que desplegar/reiniciar explícitamente con esta versión.
 
 ### Contrato GraphQL
 
-El SDL y la introspección canónicos están en `docs/graphql/`; `SchemaExportTest`
-los compara con el esquema de la aplicación sin regenerarlos por defecto.
-Consulte [el contrato comparado](docs/frontend-contract-diff.md),
-[los datos locales](docs/local-integration-data.md) y
-[la guía demográfica](docs/patient-demographic-readback.md).
+El SDL y la introspección canónicos están en `docs/graphql/`; `SchemaExportTest` los compara con el esquema de la aplicación sin regenerarlos por defecto. Consulte [el contrato comparado](docs/frontend-contract-diff.md), [los datos locales](docs/local-integration-data.md) y [la guía demográfica](docs/patient-demographic-readback.md).
