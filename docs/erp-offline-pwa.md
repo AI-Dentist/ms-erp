@@ -431,6 +431,21 @@ the ten scoped classes (see the commit message for the observed counts); the two
 advisory changes have no separately observable failure path, which is stated instead
 of claimed as a red observation.
 
+### Status after a conflicting reservation
+
+A replay that keeps the same `operationId` but changes the payload, the type or the identity
+link is rejected as `CONFLICT` with `PAYLOAD_MISMATCH`, `OPERATION_TYPE_MISMATCH` or
+`ACTOR_LINK_CHANGED`, and the rejection is recorded durably on the existing intent as
+`BLOCKED` with that reason. `estadoOperacionOffline` therefore answers `BLOCKED` plus the
+reason code after a conflicting replay; it never answers a bare `PREPARED` with a null
+reason. The earlier behaviour, where a conflicting replay left the row `PREPARED` with no
+reason until something else happened, is no longer current.
+
+`BLOCKED` is **not terminal**: the frozen intent may still be executed with its original
+payload, which is why the same state now means both "a denial was recorded" and "a conflict
+was recorded". `CONFIRMED` and `CONFLICT` are terminal: neither can be rewritten by a later
+denial, and a `CONFIRMED` receipt stays immutable.
+
 ### Client contract clarifications
 
 **Open cash register.** `requireOpenCashRegister` defaults to `false`, and omitting it

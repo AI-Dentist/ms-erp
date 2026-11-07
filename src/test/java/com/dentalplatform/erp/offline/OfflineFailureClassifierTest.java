@@ -104,4 +104,27 @@ class OfflineFailureClassifierTest {
         assertThat(renamed.getServerErrorMessage().getConstraint()).isEqualTo("pacientes_ci_sin_prefijo_igual");
         assertThat(reasonCode(renamed)).isNotEqualTo("TECHNICAL_RETRY_REQUIRED").isEqualTo("INVALID_INPUT");
     }
+    @Test
+    void degradedExtractionIsObservableThroughAStructuredWarning() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+                .getLogger(com.dentalplatform.erp.offline.application.OfflineFailureClassifier.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            // A 23505 whose exception exposes no readable constraint must not degrade silently.
+            var opaque = new java.sql.SQLException("duplicate key value violates unique constraint", "23505");
+            assertThat(com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(opaque))
+                    .isEqualTo("INVALID_INPUT");
+            assertThat(appender.list).hasSize(1);
+            var event = appender.list.get(0);
+            assertThat(event.getLevel().toString()).isEqualTo("WARN");
+            assertThat(event.getFormattedMessage()).contains("23505");
+            assertThat(event.getFormattedMessage()).contains("java.sql.SQLException");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
 }

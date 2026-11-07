@@ -5,7 +5,8 @@ import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
+import org.postgresql.util.PSQLException;
+
 import java.sql.SQLException;
 
 /**
@@ -59,15 +60,11 @@ public final class OfflineFailureClassifier {
     }
 
     private static String structuredConstraint(SQLException sql) {
-        try {
-            Method serverError = sql.getClass().getMethod("getServerErrorMessage");
-            Object message = serverError.invoke(sql);
-            if (message == null) return null;
-            Object constraint = message.getClass().getMethod("getConstraint").invoke(message);
-            return constraint == null ? null : constraint.toString();
-        } catch (ReflectiveOperationException | RuntimeException unavailable) {
-            return null;
-        }
+        if (!(sql instanceof PSQLException postgres)) return null;
+        var message = postgres.getServerErrorMessage();
+        if (message == null) return null;
+        String constraint = message.getConstraint();
+        return constraint == null ? null : constraint;
     }
 
     private static boolean isPatientCiNit(String constraint) {

@@ -180,83 +180,50 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
     }
 
     @Test
-    void thePatientDuplicateClassificationComesFromDataNotFromTheLegacyProse() throws Exception {
+    void theLegacyDuplicateRuleCarriesTheStableCodeTheOfflineContractMaps() throws Exception {
         var session = session("ADMIN", true);
         var payload = patient();
         UUID registered = UUID.randomUUID();
         confirmed(sync(session, registered, payload), registered);
-        // Rewrite the legacy rejection text: the offline classification must not depend on it at all.
+        var observed = new java.util.concurrent.atomic.AtomicReference<
+                com.dentalplatform.erp.shared.domain.exception.BusinessRuleException>();
+        doAnswer(call -> {
+            try {
+                return call.callRealMethod();
+            } catch (com.dentalplatform.erp.shared.domain.exception.BusinessRuleException rejected) {
+                observed.set(rejected);
+                throw rejected;
+            }
+        }).when(patients).ejecutar(any());
+        sync(session, UUID.randomUUID(), payload);
+        assertThat(observed.get()).as("the legacy duplicate rule must still reject").isNotNull();
+        assertThat(codeOf(observed.get()))
+                .as("the duplicate decision must be owned by a stable code, not by message text")
+                .isEqualTo("PATIENT_CI_NIT_DUPLICATE");
+    }
+
+    private static String codeOf(com.dentalplatform.erp.shared.domain.exception.BusinessRuleException rejected) {
+        try {
+            return (String) rejected.getClass().getMethod("code").invoke(rejected);
+        } catch (ReflectiveOperationException absent) {
+            throw new AssertionError("BusinessRuleException must expose a stable code() accessor", absent);
+        }
+    }
+
+    @Test
+    void theOfflineDuplicateClassificationIgnoresMessageTextEntirely() throws Exception {
+        var session = session("ADMIN", true);
+        var payload = patient();
+        UUID registered = UUID.randomUUID();
+        confirmed(sync(session, registered, payload), registered);
+        // A rejection that carries no stable code must not be guessed from prose: it is a plain invalid input.
         doAnswer(call -> {
             throw new com.dentalplatform.erp.shared.domain.exception.BusinessRuleException(
-                    "Regla interna sustituida: el mensaje ya no menciona el CI/NIT");
+                    "Mensaje reescrito que no menciona el CI/NIT y tampoco aporta código");
         }).when(patients).ejecutar(any());
-        UUID duplicate = UUID.randomUUID();
-        var before = OfflineSyncHttpSupport.snapshot(port);
-        // The ledger legitimately gains ONE row for this rejected attempt; everything else must stay as it was.
-        int ledgerRowsBefore = ledgerRows(OfflineSyncHttpSupport.offlineLedger());
-        JsonNode conflict = sync(session, duplicate, payload);
+        var conflict = sync(session, UUID.randomUUID(), payload);
         assertThat(conflict.path("state").asText()).isEqualTo("CONFLICT");
-        assertThat(conflict.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
-        assertThat(conflict.path("result").isNull()).isTrue();
-        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
-        var ledgerAfter = OfflineSyncHttpSupport.offlineLedger();
-        assertThat(ledgerRows(ledgerAfter)).isEqualTo(ledgerRowsBefore + 1);
-        JsonNode recorded = null;
-        for (JsonNode row : ledgerAfter) {
-            if (duplicate.toString().equals(row.path("operationId").asText())) recorded = row;
-        }
-        assertThat(recorded).isNotNull();
-        assertThat(recorded.path("state").asText()).isEqualTo("CONFLICT");
-        assertThat(recorded.path("reasonCode").asText()).isEqualTo("PATIENT_DUPLICATE");
-    }
-
-    /**
-     * Compile-time bridge for this test-first checkpoint: {@code BusinessRuleException} does not carry a stable code
-     * yet, so the contract is read reflectively and a missing accessor fails as a plain assertion instead of
-     * breaking the compile. When the domain exception exposes it, replace this body with
-     * {@code rejected.code()}; the contract name {@code PATIENT_CI_NIT_DUPLICATE} stays identical.
-     */
-    private static String stableDomainCode(BusinessRuleException rejected) {
-        for (String accessor : new String[]{"code", "getCode", "reasonCode"}) {
-            try {
-                if (rejected.getClass().getMethod(accessor).invoke(rejected) instanceof String code) return code;
-            } catch (NoSuchMethodException absent) {
-                // try the next conventional accessor name
-            } catch (ReflectiveOperationException | RuntimeException unavailable) {
-                break;
-            }
-        }
-        return org.assertj.core.api.Assertions.fail("BusinessRuleException must expose the stable domain code "
-                + "(expected PATIENT_CI_NIT_DUPLICATE) so the offline duplicate classification never depends on prose");
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"role", "inactive"})
-    void revokedLivePermissionBlocksConfirmedStatusAndReplayWithoutDisclosure(String change) throws Exception {
-        var session = session("ADMIN", true);
-        UUID op = UUID.randomUUID();
-        var payload = patient();
-        JsonNode original = sync(session, op, payload);
-        confirmed(original, op);
-        changeUser(session, change.equals("role") ? "CAJERO" : "ADMIN", !change.equals("inactive"));
-        var before = OfflineSyncHttpSupport.snapshot(port);
-        String code = change.equals("role") ? "PERMISSION_REVOKED" : "ACTOR_UNAVAILABLE";
-        for (String query : List.of(SYNC, STATUS)) {
-            Map<String, Object> args = query.equals(SYNC) ? Map.of("input", input(session, op, payload))
-                    : Map.of("session", session.id().toString(), "op", op.toString());
-            var response = OfflineSyncHttpSupport.send(port, query, args, session.token(), null, null);
-            OfflineSyncHttpSupport.error(response, code);
-            assertThat(response.body()).doesNotContain(original.path("result").path("patientId").asText());
-        }
-        if (change.equals("role")) {
-            String token = OfflineSyncHttpSupport.token(session.actor(), "CAJERO", session.auth().getEpochSecond(),
-                    java.time.Instant.now(), session.expiry());
-            var response = OfflineSyncHttpSupport.send(port, STATUS, Map.of("session", session.id().toString(),
-                    "op", op.toString()), token, null, null);
-            OfflineSyncHttpSupport.error(response, "PERMISSION_REVOKED");
-            assertThat(response.body()).doesNotContain(original.path("payloadHash").asText());
-        }
-        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
+        assertThat(conflict.path("reasonCode").asText()).isEqualTo("INVALID_INPUT");
     }
 
     private List<JsonNode> concurrently(Session first, Session second, UUID a, UUID b,

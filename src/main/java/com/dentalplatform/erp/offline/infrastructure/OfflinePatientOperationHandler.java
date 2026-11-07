@@ -8,7 +8,6 @@ import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
 import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -20,12 +19,10 @@ import java.util.UUID;
 @Component
 public class OfflinePatientOperationHandler implements OfflineOperationHandler {
     private final CrearPacienteUseCase patients;
-    private final JdbcTemplate jdbc;
     @PersistenceContext private EntityManager entityManager;
 
-    public OfflinePatientOperationHandler(CrearPacienteUseCase patients, JdbcTemplate jdbc) {
+    public OfflinePatientOperationHandler(CrearPacienteUseCase patients) {
         this.patients = patients;
-        this.jdbc = jdbc;
     }
 
     @Override public OfflineOperationReceipt.Type type() {
@@ -45,19 +42,13 @@ public class OfflinePatientOperationHandler implements OfflineOperationHandler {
         String email = optional(payload.get("email"));
         String direccion = optional(payload.get("direccion"));
         try {
-            // Classify the duplicate rule from data, never from the legacy localized message: the existing use
-            // case rejects a repeated CI/NIT before any insert, and the unique index stays the fallback for a race.
-            if (!jdbc.query("SELECT 1 FROM pacientes WHERE ci_nit = ?", (rs, row) -> 1, ciNit).isEmpty()) {
-                throw new OfflineOperationConflict("PATIENT_DUPLICATE");
-            }
             var patient = patients.ejecutar(new CrearPacienteCommand(ciNit, nombres, apellidos, fechaNacimiento,
                     genero, telefono, email, direccion));
             entityManager.flush();
             return new OfflineOperationReceipt.Result(patient.getId(), null, List.of(), null, null);
         } catch (BusinessRuleException rejected) {
-            // Translate the existing duplicate rule, not GraphQL error text or a success heuristic.
-            if (rejected.getMessage() != null
-                    && rejected.getMessage().startsWith("Ya existe un paciente con el CI/NIT ")) {
+            // Classify on the stable rule code, never on localized message text.
+            if ("PATIENT_CI_NIT_DUPLICATE".equals(rejected.code())) {
                 throw new OfflineOperationConflict("PATIENT_DUPLICATE");
             }
             throw new OfflineOperationConflict("INVALID_INPUT");
