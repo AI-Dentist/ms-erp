@@ -6,6 +6,9 @@ package com.dentalplatform.erp.shared.domain.exception;
  */
 public class BusinessRuleException extends RuntimeException {
 
+    /** The frozen CI/NIT duplicate rule; shared by its throwers, the offline mapping and the tests. */
+    public static final String PATIENT_CI_NIT_DUPLICATE = "PATIENT_CI_NIT_DUPLICATE";
+
     private final String code;
 
     public BusinessRuleException(String message) {

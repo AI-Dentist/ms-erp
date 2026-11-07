@@ -12,10 +12,11 @@ import java.sql.SQLException;
 /**
  * Maps a failed synchronization attempt to the stable reason code the client reports.
  *
- * <p>A unique violation is classified by the PostgreSQL constraint identifier carried in the driver's
- * structured server error, never by scraping prose: the server may answer in Spanish with mangled quoting,
- * and a duplicated VALUE could contain the constraint token. The driver is a runtime dependency, so the
- * accessor is read reflectively instead of importing the driver into the application layer.</p>
+ * <p>A unique violation is classified in this order: first the driver's typed structured server error
+ * (the PostgreSQL driver is a compile-scope dependency, so it is imported directly), then an identifier scan
+ * over the cause messages as a last resort for a shaded, relocated or wrapped driver, and only then a
+ * permanent INVALID_INPUT with a structured warning so the degradation is observable. Prose is never the
+ * primary signal, and a duplicated VALUE can never be mistaken for a constraint name.</p>
  */
 public final class OfflineFailureClassifier {
     private static final Logger log = LoggerFactory.getLogger(OfflineFailureClassifier.class);
@@ -30,6 +31,7 @@ public final class OfflineFailureClassifier {
                 String state = sql.getSQLState();
                 if ("23505".equals(state)) {
                     String constraint = duplicateConstraint(failure);
+                    if (constraint == null) constraint = scanConstraintIdentifiers(failure);
                     if (constraint == null) {
                         // Degrade observably: a shaded driver or an opaque wrapper must not hide a real duplicate.
                         log.warn("Unique violation without a readable constraint name: sqlState={} exceptionClass={}",
@@ -41,7 +43,12 @@ public final class OfflineFailureClassifier {
                 if ("22001".equals(state) || "22021".equals(state) || "22P05".equals(state)
                         || "23502".equals(state) || "23514".equals(state)) return "INVALID_INPUT";
             }
-            if (cause instanceof BusinessRuleException || cause instanceof IllegalArgumentException) return "INVALID_INPUT";
+            if (cause instanceof BusinessRuleException rule) {
+                // The rule owns its stable code; an absent or unknown code stays a plain invalid input.
+                if (BusinessRuleException.PATIENT_CI_NIT_DUPLICATE.equals(rule.code())) return "PATIENT_DUPLICATE";
+                return "INVALID_INPUT";
+            }
+            if (cause instanceof IllegalArgumentException) return "INVALID_INPUT";
         }
         return "TECHNICAL_RETRY_REQUIRED";
     }
@@ -65,6 +72,21 @@ public final class OfflineFailureClassifier {
         if (message == null) return null;
         String constraint = message.getConstraint();
         return constraint == null ? null : constraint;
+    }
+
+    /** Fallback for a driver the typed accessor cannot see: scan cause messages for the constraint identifier. */
+    static String scanConstraintIdentifiers(Throwable failure) {
+        var identifier = java.util.regex.Pattern.compile("[A-Za-z0-9_]+");
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message == null) continue;
+            var tokens = identifier.matcher(message);
+            while (tokens.find()) {
+                String token = tokens.group();
+                if (isPatientCiNit(token)) return token;
+            }
+        }
+        return null;
     }
 
     private static boolean isPatientCiNit(String constraint) {

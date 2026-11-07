@@ -441,6 +441,13 @@ reason code after a conflicting replay; it never answers a bare `PREPARED` with 
 reason. The earlier behaviour, where a conflicting replay left the row `PREPARED` with no
 reason until something else happened, is no longer current.
 
+Degraded case, stated instead of promised away: recording the reason is a best-effort write in
+its own transaction. If that write cannot run (unavailable identity, a ledger failure, or an
+identity mismatch where nothing is written at all), the intent keeps its previous state and the
+status may still answer `PREPARED` with a null reason. The conflict itself is always returned to
+the caller that triggered it; only the durable record can be missing, and the server logs the
+failure rather than pretending the write succeeded.
+
 `BLOCKED` is **not terminal**: the frozen intent may still be executed with its original
 payload, which is why the same state now means both "a denial was recorded" and "a conflict
 was recorded". `CONFIRMED` and `CONFLICT` are terminal: neither can be rewritten by a later

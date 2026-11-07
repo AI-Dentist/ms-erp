@@ -48,7 +48,7 @@ public class OfflinePatientOperationHandler implements OfflineOperationHandler {
             return new OfflineOperationReceipt.Result(patient.getId(), null, List.of(), null, null);
         } catch (BusinessRuleException rejected) {
             // Classify on the stable rule code, never on localized message text.
-            if ("PATIENT_CI_NIT_DUPLICATE".equals(rejected.code())) {
+            if (BusinessRuleException.PATIENT_CI_NIT_DUPLICATE.equals(rejected.code())) {
                 throw new OfflineOperationConflict("PATIENT_DUPLICATE");
             }
             throw new OfflineOperationConflict("INVALID_INPUT");

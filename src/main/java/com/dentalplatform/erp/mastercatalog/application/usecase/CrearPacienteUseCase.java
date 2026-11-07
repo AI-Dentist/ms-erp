@@ -37,7 +37,7 @@ public class CrearPacienteUseCase {
                 command.direccion(), OffsetDateTime.now(clock));
         if (pacientes.existeCiNit(nuevo.getCiNit())) {
             throw new BusinessRuleException("Ya existe un paciente con el CI/NIT " + nuevo.getCiNit(),
-                    "PATIENT_CI_NIT_DUPLICATE");
+                    BusinessRuleException.PATIENT_CI_NIT_DUPLICATE);
         }
         Paciente guardado = pacientes.guardar(nuevo);
         auditoria.registrar("PACIENTE_CREADO", "pacientes", guardado.getId(), Map.of("ciNit", guardado.getCiNit()));

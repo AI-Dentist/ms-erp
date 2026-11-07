@@ -175,10 +175,6 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
         assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
     }
 
-    private static int ledgerRows(JsonNode ledger) {
-        return ledger.isArray() ? ledger.size() : ledger.path("offlineReceipts").size();
-    }
-
     @Test
     void theLegacyDuplicateRuleCarriesTheStableCodeTheOfflineContractMaps() throws Exception {
         var session = session("ADMIN", true);
@@ -197,17 +193,9 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
         }).when(patients).ejecutar(any());
         sync(session, UUID.randomUUID(), payload);
         assertThat(observed.get()).as("the legacy duplicate rule must still reject").isNotNull();
-        assertThat(codeOf(observed.get()))
+        assertThat(observed.get().code())
                 .as("the duplicate decision must be owned by a stable code, not by message text")
                 .isEqualTo("PATIENT_CI_NIT_DUPLICATE");
-    }
-
-    private static String codeOf(com.dentalplatform.erp.shared.domain.exception.BusinessRuleException rejected) {
-        try {
-            return (String) rejected.getClass().getMethod("code").invoke(rejected);
-        } catch (ReflectiveOperationException absent) {
-            throw new AssertionError("BusinessRuleException must expose a stable code() accessor", absent);
-        }
     }
 
     @Test
@@ -237,6 +225,35 @@ class OfflinePatientSyncHttpTest extends OfflineOperationHttpTestSupport {
             go.countDown();
             return List.of(left.get(30, TimeUnit.SECONDS), right.get(30, TimeUnit.SECONDS));
         }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"role", "inactive"})
+    void revokedLivePermissionBlocksConfirmedStatusAndReplayWithoutDisclosure(String change) throws Exception {
+        var session = session("ADMIN", true);
+        UUID op = UUID.randomUUID();
+        var payload = patient();
+        JsonNode original = sync(session, op, payload);
+        confirmed(original, op);
+        changeUser(session, change.equals("role") ? "CAJERO" : "ADMIN", !change.equals("inactive"));
+        var before = OfflineSyncHttpSupport.snapshot(port);
+        String code = change.equals("role") ? "PERMISSION_REVOKED" : "ACTOR_UNAVAILABLE";
+        for (String query : List.of(SYNC, STATUS)) {
+            Map<String, Object> args = query.equals(SYNC) ? Map.of("input", input(session, op, payload))
+                    : Map.of("session", session.id().toString(), "op", op.toString());
+            var response = OfflineSyncHttpSupport.send(port, query, args, session.token(), null, null);
+            OfflineSyncHttpSupport.error(response, code);
+            // A denied caller must not receive the cached confirmed payload or its hash.
+            assertThat(response.body()).doesNotContain(original.path("result").path("patientId").asText());
+        }
+        if (change.equals("role")) {
+            String token = OfflineSyncHttpSupport.token(session.actor(), "CAJERO", session.auth().getEpochSecond(),
+                    java.time.Instant.now(), session.expiry());
+            var response = OfflineSyncHttpSupport.send(port, STATUS, Map.of("session", session.id().toString(),
+                    "op", op.toString()), token, null, null);
+            OfflineSyncHttpSupport.error(response, "PERMISSION_REVOKED");
+            assertThat(response.body()).doesNotContain(original.path("payloadHash").asText());
+        }
+        assertThat(OfflineSyncHttpSupport.snapshot(port)).isEqualTo(before);
     }
 
     @Test

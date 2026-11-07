@@ -119,12 +119,31 @@ class OfflineFailureClassifierTest {
             assertThat(appender.list).hasSize(1);
             var event = appender.list.get(0);
             assertThat(event.getLevel().toString()).isEqualTo("WARN");
-            assertThat(event.getFormattedMessage()).contains("23505");
-            assertThat(event.getFormattedMessage()).contains("java.sql.SQLException");
+            assertThat(event.getArgumentArray()).containsExactly("23505", "java.sql.SQLException");
         } finally {
             logger.detachAppender(appender);
             appender.stop();
         }
+    }
+
+    @Test
+    void aCodedDuplicateRuleIsPatientDuplicateAndAnUncodedOneStaysInvalidInput() {
+        var coded = new com.dentalplatform.erp.shared.domain.exception.BusinessRuleException(
+                "texto irrelevante", com.dentalplatform.erp.shared.domain.exception.BusinessRuleException.PATIENT_CI_NIT_DUPLICATE);
+        assertThat(com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(coded))
+                .isEqualTo("PATIENT_DUPLICATE");
+        var uncoded = new com.dentalplatform.erp.shared.domain.exception.BusinessRuleException("solo texto");
+        assertThat(com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(uncoded))
+                .isEqualTo("INVALID_INPUT");
+    }
+
+    @Test
+    void aNonDriverUniqueViolationStillFallsBackToTheIdentifierScan() {
+        // Shaded or wrapped driver: the typed accessor cannot help, but the constraint token is still present.
+        var opaque = new java.sql.SQLException(
+                "llave duplicada viola restriccion de unicidad \"pacientes_ci_nit_key\"", "23505");
+        assertThat(com.dentalplatform.erp.offline.application.OfflineFailureClassifier.reasonCode(opaque))
+                .isEqualTo("PATIENT_DUPLICATE");
     }
 
 }
