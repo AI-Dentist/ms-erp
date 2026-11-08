@@ -30,6 +30,12 @@ mutation CrearUsuarioConIdentidad($input: CrearUsuarioConIdentidadInput!) {
 {"input":{"usuario":{"rolCodigo":"CAJERO","username":"cajero-atomico","email":"cajero-atomico@example.test","nombreCompleto":"Cajero sintético","password":"Synthetic2026!"},"keycloakSubject":"synthetic:atomic-cashier"}}
 ```
 
+## Extensión IA/ML/MCP y reportes (S4-S7)
+
+Por compatibilidad aditiva, `ejecutarAgenteErp` conserva su retorno **OBJECT** `AgenteInteraccionResponse!`; `listarHistorialAgente` tampoco cambia. Se declara además `type RespuestaAgenteErp` con exactamente los mismos campos. No se cambia el kind a INTERFACE: los fragments, la introspección y los clientes existentes siguen funcionando. Esta decisión sustituye el rename literal inicialmente propuesto para S7.
+
+`reporteGenerado` añade `titulo`, `sqlGenerado` (alias de `consultaSqlEjecutada`), `filas` (arreglos de texto) y `resumenAnalitico`. `filasJson` conserva sus tipos JSON originales. Las descargas existentes siguen disponibles; se añaden GET con query `reporteId`/`format` y POST JSON al mismo `/api/v1/reports/export`, con idéntica autorización y salida directa al stream HTTP. Ver [contrato de reportes y automatización](ai-ml-mcp-reports.md).
+
 ## Resumen
 
 **37 operaciones del frontend validadas: 2 válidas, 35 inválidas** contra el esquema servido.

@@ -198,6 +198,22 @@ class AgentFallbackIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void reportExposesCanonicalFieldsAlongsideLegacyFields() {
+        var response = graphQl.document("""
+                mutation { ejecutarAgenteErp(instruccion: "Genera un reporte de precios de servicios") {
+                  reporteGenerado { titulo sqlGenerado consultaSqlEjecutada filas columnas filasJson resumenAnalitico tipoGraficoSugerido }
+                } }
+                """).execute();
+        response.path("ejecutarAgenteErp.reporteGenerado.titulo").entity(String.class).isEqualTo("Genera un reporte de precios de servicios");
+        String sql = response.path("ejecutarAgenteErp.reporteGenerado.sqlGenerado").entity(String.class).get();
+        response.path("ejecutarAgenteErp.reporteGenerado.consultaSqlEjecutada").entity(String.class).isEqualTo(sql)
+                .path("ejecutarAgenteErp.reporteGenerado.tipoGraficoSugerido").entity(String.class).matches(s -> List.of("BARRAS", "LINEAS", "TORTA").contains(s))
+                .path("ejecutarAgenteErp.reporteGenerado.resumenAnalitico").entity(String.class).matches(s -> s.contains("registro") && s.contains("code"));
+        assertThat(response.path("ejecutarAgenteErp.reporteGenerado.filas").entityList(List.class).get()).isNotEmpty();
+        assertThat(JSON.readTree(response.path("ejecutarAgenteErp.reporteGenerado.filasJson").entity(String.class).get()).size()).isPositive();
+    }
+
+    @Test
     void reportRunsTheGuardedTemplateAndBothDownloadsAreRealFiles() throws Exception {
         var clinic = graphQl.document("{ obtenerConfiguracionEmpresa { nombreComercial nit } }").execute()
                 .path("obtenerConfiguracionEmpresa").entity(java.util.Map.class).get();

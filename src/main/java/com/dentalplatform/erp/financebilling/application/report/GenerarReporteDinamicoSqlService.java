@@ -16,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -49,6 +50,19 @@ public class GenerarReporteDinamicoSqlService {
 
     public record Generado(ReportResponse reporte, ReportResult datos) { }
 
+    private static String buildTitulo(String solicitud) {
+        String clean = solicitud.strip();
+        return clean.length() <= 80 ? clean : clean.substring(0, 80) + "…";
+    }
+
+    private static String buildResumenAnalitico(ReportResult result, String titulo) {
+        int rows = result.rows().size();
+        int cols = result.columns().size();
+        String cols_str = String.join(", ", result.columns());
+        return String.format("Informe: %s. Se obtuvieron %d registro%s con %d columna%s (%s).",
+                titulo, rows, rows == 1 ? "" : "s", cols, cols == 1 ? "" : "s", cols_str);
+    }
+
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
     public Generado ejecutar(String solicitud) {
@@ -61,8 +75,16 @@ public class GenerarReporteDinamicoSqlService {
         String sql = guard.validate(generated);
         ReportResult result = query.execute(sql);
         UUID id = UUID.randomUUID();
+        String titulo = buildTitulo(solicitud);
+        List<List<String>> filas = result.rows().stream()
+                .map(row -> row.stream().map(v -> v == null ? "" : v.toString()).toList())
+                .toList();
+        String resumenAnalitico = buildResumenAnalitico(result, titulo);
+        String chart = ReportChartAdvisor.sugerir(result);
+        if ("TABLA".equals(chart)) { chart = "BARRAS"; }
         var response = new ReportResponse(id, solicitud, sql, result.columns(), json.writeValueAsString(result.rows()),
-                ReportChartAdvisor.sugerir(result), EXPORT_BASE + id + "/xlsx", EXPORT_BASE + id + "/pdf");
+                chart, EXPORT_BASE + id + "/xlsx", EXPORT_BASE + id + "/pdf",
+                titulo, sql, filas, resumenAnalitico);
         store.put(SecurityContextHolder.getContext().getAuthentication().getName(), response, result);
         return new Generado(response, result);
     }

@@ -259,12 +259,33 @@ type Recibo {
 
 type ReporteGenerativoPayload {
   columnas: [String!]!
+  "SQL ejecutado (alias: sqlGenerado)"
   consultaSqlEjecutada: String!
+  "Filas como arreglo de arreglos de texto para renderizado directo en tabla"
+  filas: [[String]]
+  "Filas serializadas como JSON para compatibilidad hacia atrás"
   filasJson: String!
   reporteId: UUID!
+  "Resumen analítico generado a partir de los datos del reporte"
+  resumenAnalitico: String!
+  "SQL ejecutado (nombre canónico S6)"
+  sqlGenerado: String!
   tipoGraficoSugerido: String!
+  "Título legible derivado de la solicitud original"
+  titulo: String!
   urlDescargaExcel: String!
   urlDescargaPdf: String!
+}
+
+type RespuestaAgenteErp {
+  accionCrudEjecutada: String
+  fechaEjecucion: DateTime!
+  instruccionOriginal: String!
+  interaccionId: UUID!
+  notificacionN8nEnviada: Boolean!
+  reporteGenerado: ReporteGenerativoPayload
+  respuestaNaturalAgente: String!
+  toolsMcpInvocadas: [String!]!
 }
 
 type ResumenFlujoCaja {
@@ -283,6 +304,7 @@ type Rol {
 
 type ServicioOdontologico {
   activo: Boolean!
+  categoria: String
   codigo: String!
   descripcion: String
   especialidad: Especialidad

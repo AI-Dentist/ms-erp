@@ -101,6 +101,7 @@ class ReportsIntegrationTest extends IntegrationTestBase {
             var report = tools.generarReporteDinamicoSqlTool(question);
             assertThat(report.consultaSqlEjecutada()).isEqualTo(sql + " LIMIT 500");
             assertThat(report.columnas()).containsExactly("sum");
+            assertThat(report.tipoGraficoSugerido()).isEqualTo("BARRAS");
             assertThat(report.totalFilas()).isEqualTo(1);
             assertThat(new java.math.BigDecimal(String.valueOf(report.muestraFilas().getFirst().getFirst())))
                     .isEqualByComparingTo(request[3]);

@@ -12,6 +12,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,21 +31,38 @@ public class ReportExportRestController {
         this.exporters = List.copyOf(exporters);
     }
 
+    public record ExportRequest(String reporteId, String format) { }
+
+    @GetMapping("/api/v1/reports/export")
+    @PreAuthorize("hasRole(\'ADMIN\')")
+    public ResponseEntity<?> exportQuery(@RequestParam String reporteId, @RequestParam String format, HttpServletResponse response) throws IOException {
+        return export(reporteId, format, response);
+    }
+
+    @PostMapping("/api/v1/reports/export")
+    @PreAuthorize("hasRole(\'ADMIN\')")
+    public ResponseEntity<?> exportBody(@RequestBody ExportRequest request, HttpServletResponse response) throws IOException {
+        return export(request.reporteId(), request.format(), response);
+    }
+
     @GetMapping("/api/v1/reports/export/{reporteId}/{format}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> export(@PathVariable String reporteId, @PathVariable String format) {
+    public ResponseEntity<?> export(@PathVariable String reporteId, @PathVariable String format, HttpServletResponse response) throws IOException {
         var exporter = exporters.stream().filter(e -> e.format().equals(format)).findFirst();
         if (exporter.isEmpty()) { return error(400, "Formato de reporte no permitido"); }
         UUID id;
         try { id = UUID.fromString(reporteId); }
-        catch (IllegalArgumentException e) { return error(404, "Reporte no disponible"); }
+        catch (IllegalArgumentException | NullPointerException e) { return error(404, "Reporte no disponible"); }
         var cached = store.find(SecurityContextHolder.getContext().getAuthentication().getName(), id);
         if (cached.isEmpty()) { return error(404, "Reporte no disponible"); }
         try {
-            return ResponseEntity.ok().contentType(MediaType.parseMediaType(exporter.get().contentType()))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"reporte-" + id + "." + format + "\"")
-                    .header(HttpHeaders.CACHE_CONTROL, "no-store").header("X-Content-Type-Options", "nosniff")
-                    .body(exporter.get().export(ReportDocument.desde(cached.get())));
+            response.setContentType(exporter.get().contentType());
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"reporte-" + id + "." + format + "\"");
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            exporter.get().exportTo(ReportDocument.desde(cached.get()), response.getOutputStream());
+            response.flushBuffer();
+            return null;
         } catch (BusinessRuleException e) { return error(503, "No se pudo exportar el reporte"); }
     }
 

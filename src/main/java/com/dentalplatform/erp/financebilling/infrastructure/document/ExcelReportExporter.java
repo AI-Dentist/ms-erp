@@ -33,10 +33,17 @@ public class ExcelReportExporter implements ReportExporterPort {
 
     @Override
     public byte[] export(ReportDocument document) {
+        var output = new ByteArrayOutputStream();
+        exportTo(document, output);
+        return output.toByteArray();
+    }
+
+    @Override
+    public void exportTo(ReportDocument document, java.io.OutputStream out) {
         var config = empresa.ejecutar();
         var result = document.resultado();
         int width = result.columns().size();
-        try (var workbook = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
+        try (var workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("Reporte");
             var big = workbook.createFont();
             big.setBold(true);
@@ -91,7 +98,7 @@ public class ExcelReportExporter implements ReportExporterPort {
             sheet.createFreezePane(0, headerRow + 1);
             for (int i = 0; i < width; i++) { size(sheet, i, width); }
             workbook.write(out);
-            return out.toByteArray();
+
         } catch (Exception e) { throw new BusinessRuleException("No se pudo exportar el reporte"); }
     }
 

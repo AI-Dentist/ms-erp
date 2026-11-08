@@ -37,13 +37,19 @@ public class PdfReportExporter implements ReportExporterPort {
 
     @Override
     public byte[] export(ReportDocument document) {
+        var output = new ByteArrayOutputStream();
+        exportTo(document, output);
+        return output.toByteArray();
+    }
+
+    @Override
+    public void exportTo(ReportDocument document, java.io.OutputStream out) {
         var config = empresa.ejecutar();
         var result = document.resultado();
         int width = result.columns().size();
         var money = new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.US));
-        try (var out = new ByteArrayOutputStream();
-             var pdf = new Document(width > 5 ? PageSize.A4.rotate() : PageSize.A4)) {
-            PdfWriter.getInstance(pdf, out);
+        try (var pdf = new Document(width > 5 ? PageSize.A4.rotate() : PageSize.A4)) {
+            PdfWriter.getInstance(pdf, out).setCloseStream(false);
             pdf.open();
             Font title = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16);
             Font bold = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10);
@@ -78,7 +84,7 @@ public class PdfReportExporter implements ReportExporterPort {
             }
             pdf.add(table);
             pdf.close();
-            return out.toByteArray();
+
         } catch (Exception e) { throw new BusinessRuleException("No se pudo exportar el reporte"); }
     }
 }

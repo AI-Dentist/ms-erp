@@ -31,6 +31,33 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ReportStoreAndExportTest {
+    @org.junit.jupiter.api.Nested
+    @org.springframework.test.context.ActiveProfiles("dev")
+    @org.springframework.security.test.context.support.WithMockUser(username = "admin", roles = "ADMIN")
+    class FragmentCompatibility extends com.dentalplatform.erp.support.IntegrationTestBase {
+    @Test
+    void legacyFragmentsAndObjectKindRemainValid() {
+        var legacy = graphQl.document("{ __type(name: \"AgenteInteraccionResponse\") { kind fields { name } } }").execute();
+        var canonical = graphQl.document("{ __type(name: \"RespuestaAgenteErp\") { kind fields { name } } }").execute();
+        legacy.path("__type.kind").entity(String.class).isEqualTo("OBJECT");
+        canonical.path("__type.kind").entity(String.class).isEqualTo("OBJECT");
+        assertThat(canonical.path("__type.fields[*].name").entityList(String.class).get())
+                .containsExactlyElementsOf(legacy.path("__type.fields[*].name").entityList(String.class).get());
+        graphQl.document("""
+                mutation { ejecutarAgenteErp(instruccion: "cuéntame un chiste") {
+                  __typename ...Legacy ... on AgenteInteraccionResponse { notificacionN8nEnviada }
+                  toolsMcpInvocadas
+                } }
+                fragment Legacy on AgenteInteraccionResponse { respuestaNaturalAgente }
+                """).execute().errors().verify()
+                .path("ejecutarAgenteErp.__typename").entity(String.class).isEqualTo("AgenteInteraccionResponse")
+                .path("ejecutarAgenteErp.respuestaNaturalAgente").entity(String.class).matches(t -> t.startsWith("[Respaldo determinístico — sin IA]"))
+                .path("ejecutarAgenteErp.notificacionN8nEnviada").entity(Boolean.class).isEqualTo(false)
+                .path("ejecutarAgenteErp.toolsMcpInvocadas").entityList(String.class).hasSize(0);
+    }
+
+    }
+
     private static final String SQL = "SELECT code, price_bs FROM report_services";
     private final ReportResult data = new ReportResult(List.of("code", "price_bs"),
             List.of(List.of("=HYPERLINK(\"evil\")", new BigDecimal("1400.5"))));
@@ -44,7 +71,8 @@ class ReportStoreAndExportTest {
     }
 
     private ReportResponse response() {
-        return new ReportResponse(UUID.randomUUID(), "Servicios", SQL, data.columns(), "[]", "TABLA", "/xlsx", "/pdf");
+        return new ReportResponse(UUID.randomUUID(), "Servicios", SQL, data.columns(), "[]", "TABLA", "/xlsx", "/pdf",
+                "Servicios", SQL, List.of(), "Resumen de prueba");
     }
 
     private ReportDocument document() {
@@ -131,7 +159,8 @@ class ReportStoreAndExportTest {
         var entry = (java.util.function.BiFunction<String, ReportResult, ReportDocument>) (sql, result) -> {
             var store = new ReportStore(Clock.systemUTC());
             var id = UUID.randomUUID();
-            store.put("u", new ReportResponse(id, "q", sql, result.columns(), "[]", "TABLA", "", ""), result);
+            store.put("u", new ReportResponse(id, "q", sql, result.columns(), "[]", "TABLA", "", "",
+                    "q", sql, List.of(), ""), result);
             return ReportDocument.desde(store.find("u", id).orElseThrow());
         };
         assertThat(entry.apply("SELECT category, SUM(amount_bs) FROM report_income GROUP BY category", sums).montoColumnas())

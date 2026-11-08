@@ -490,11 +490,11 @@ cobranza, **nunca CRUD autónomo**. Las escrituras pasan por casos de uso transa
 y auditoría; guardrails no sustituyen roles. Sin proveedor IA solo dev/local ofrece
 respaldo determinístico identificado en cada respuesta; producción falla explícitamente.
 
-Solo dos rutas REST de negocio:
+Solo dos superficies REST de negocio (exportación y webhook):
 
 - `GET /api/v1/reports/export/{reporteId}/{format}`, `format = xlsx|pdf`: ADMIN y
   propietario del reporte generado, caché temporal; otro propietario/expirado → 404.
-  Usar las URLs devueltas por el reporte, con autenticación.
+  Usar las URLs devueltas por el reporte, con autenticación. También acepta `GET /api/v1/reports/export?reporteId=<uuid>&format=xlsx` o POST JSON con `reporteId`/`format` a `/api/v1/reports/export`; mismos permisos y stream directo PDF/XLSX.
 - `POST /api/v1/webhooks/pagofacil`: **protocolo mock local, no proveedor de producción**.
   Autentica `X-Local-Mock-Secret`, no exige Bearer. Cuerpo: `transactionId`, `amountBs`,
   `confirmedAt`; deben coincidir con la transacción/vigencia almacenadas. Reintentos

@@ -189,6 +189,7 @@ type Consultorio {
 }
 
 type ServicioOdontologico {
+    categoria: String
     id: UUID!
     codigo: String!
     nombre: String!
@@ -458,6 +459,17 @@ type McpToolMetadata {
     descripcion: String!
 }
 
+type RespuestaAgenteErp {
+    interaccionId: UUID!
+    fechaEjecucion: DateTime!
+    instruccionOriginal: String!
+    respuestaNaturalAgente: String!
+    toolsMcpInvocadas: [String!]!
+    accionCrudEjecutada: String
+    notificacionN8nEnviada: Boolean!
+    reporteGenerado: ReporteGenerativoPayload
+}
+
 type AgenteInteraccionResponse {
     interaccionId: UUID!
     fechaEjecucion: DateTime!
@@ -471,12 +483,22 @@ type AgenteInteraccionResponse {
 
 type ReporteGenerativoPayload {
     reporteId: UUID!
+    "SQL ejecutado (alias: sqlGenerado)"
     consultaSqlEjecutada: String!
     columnas: [String!]!
+    "Filas serializadas como JSON para compatibilidad hacia atrás"
     filasJson: String!
     tipoGraficoSugerido: String!
     urlDescargaExcel: String!
     urlDescargaPdf: String!
+    "Título legible derivado de la solicitud original"
+    titulo: String!
+    "SQL ejecutado (nombre canónico S6)"
+    sqlGenerado: String!
+    "Filas como arreglo de arreglos de texto para renderizado directo en tabla"
+    filas: [[String]]
+    "Resumen analítico generado a partir de los datos del reporte"
+    resumenAnalitico: String!
 }
 
 

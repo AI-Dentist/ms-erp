@@ -81,7 +81,7 @@ mutation {
     interaccionId respuestaNaturalAgente toolsMcpInvocadas accionCrudEjecutada
     notificacionN8nEnviada
     reporteGenerado {
-      reporteId consultaSqlEjecutada columnas filasJson tipoGraficoSugerido
+      reporteId titulo sqlGenerado consultaSqlEjecutada columnas filas filasJson resumenAnalitico tipoGraficoSugerido
       urlDescargaExcel urlDescargaPdf
     }
   }
@@ -98,11 +98,15 @@ Otros ejemplos de respaldo: `resumen financiero`, `cuotas vencidas`, `flujo de c
 2. Configure `ERP_REPORT_DB_USER/PASSWORD` (y opcionalmente `ERP_REPORT_DB_URL`). Sin conexión segura, falla el reporte, no el resto del ERP.
 3. Pida el reporte al agente o a `generarReporteDinamicoSqlTool`. En respaldo usa plantillas fijas; con proveedor usa Spring AI y el mismo guardrail.
 
-`SqlReadOnlyGuardrail` solo permite SELECT sobre `report_income`, `report_orders` o `report_services`, columnas aprobadas, agregados y filtros simples. Rechaza DML/DDL, comentarios, múltiples sentencias, joins, CTE y funciones arbitrarias. PostgreSQL también impone solo lectura en la conexión dedicada: pool de 2, timeout 3 s, máximo 500 filas. El gráfico es una sugerencia determinística según las columnas/tipos (BARRAS, LINEAS, TORTA o TABLA), no razonamiento del modelo. El respaldo admite filtros de método de pago (`solo QR_PAGOFACIL`, `solo EFECTIVO` o `solo TRANSFERENCIA`); fechas, categorías u otras restricciones no soportadas se rechazan explícitamente, nunca se descartan. Un reporte diario sin fechas usa los últimos 90 días.
+`SqlReadOnlyGuardrail` solo permite SELECT sobre `report_income`, `report_orders` o `report_services`, columnas aprobadas, agregados y filtros simples. Rechaza DML/DDL, EXEC/EXECUTE, comentarios, múltiples sentencias, joins, CTE y funciones arbitrarias. Añade LIMIT 500 si falta; rechaza límites fuera de 1–500. PostgreSQL también impone solo lectura en la conexión dedicada: pool de 2, timeout 3 s, máximo 500 filas. El gráfico es una sugerencia determinística según las columnas/tipos (BARRAS, LINEAS o TORTA; formas tabulares sin señal gráfica usan BARRAS), no razonamiento del modelo. El respaldo admite filtros de método de pago (`solo QR_PAGOFACIL`, `solo EFECTIVO` o `solo TRANSFERENCIA`); fechas, categorías u otras restricciones no soportadas se rechazan explícitamente, nunca se descartan. Un reporte diario sin fechas usa los últimos 90 días.
 
 La caché conserva hasta 64 reportes durante 10 minutos, solo para su propietario ADMIN. Descargue las URLs devueltas sin volver a consultar:
 - `GET /api/v1/reports/export/{reporteId}/xlsx`
 - `GET /api/v1/reports/export/{reporteId}/pdf`
+- `GET /api/v1/reports/export?reporteId=<uuid>&format=xlsx` (también `pdf`)
+- `POST /api/v1/reports/export` con JSON `{"reporteId":"<uuid>","format":"pdf"}` (también `xlsx`)
+
+Las tres rutas escriben directamente al stream de respuesta sin ensamblar un `byte[]` completo. Los permisos y la caché privada no cambian. Campos nuevos, contratos MCP y configuración n8n: [guía de extensión IA/MCP/reportes](docs/ai-ml-mcp-reports.md).
 
 Los archivos reales incluyen membrete de la clínica, fecha y Bs. XLSX conserva importes numéricos y texto sin fórmulas. MIME correcto, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`; formato inválido 400, reporte desconocido/expirado/otro propietario 404, rol insuficiente 403.
 
