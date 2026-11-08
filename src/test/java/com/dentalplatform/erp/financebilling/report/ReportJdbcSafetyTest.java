@@ -22,7 +22,7 @@ class ReportJdbcSafetyTest {
         org.mockito.Mockito.when(roleStatement.executeQuery()).thenReturn(role);
         org.mockito.Mockito.when(role.next()).thenReturn(true);
         org.mockito.Mockito.when(role.getBoolean(1)).thenReturn(true);
-        org.mockito.Mockito.when(statement.executeQuery("SELECT * FROM report_services")).thenReturn(rows);
+        org.mockito.Mockito.when(statement.executeQuery("SELECT * FROM report_services LIMIT 500")).thenReturn(rows);
         org.mockito.Mockito.when(rows.getMetaData()).thenReturn(metadata);
         org.mockito.Mockito.when(metadata.getColumnCount()).thenReturn(1);
         org.mockito.Mockito.when(metadata.getColumnLabel(1)).thenReturn("code");
@@ -38,6 +38,7 @@ class ReportJdbcSafetyTest {
             org.mockito.Mockito.verify(statement, org.mockito.Mockito.times(2)).setQueryTimeout(3);
             org.mockito.Mockito.verify(roleStatement).setQueryTimeout(3);
             org.mockito.Mockito.verify(statement).setMaxRows(500);
+            org.mockito.Mockito.verify(statement).executeQuery("SELECT * FROM report_services LIMIT 500");
             org.mockito.Mockito.verify(statement).execute("SET LOCAL statement_timeout = '3000ms'");
             org.mockito.Mockito.verify(statement).execute("SET LOCAL lock_timeout = '1000ms'");
         }

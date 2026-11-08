@@ -99,7 +99,7 @@ class ReportsIntegrationTest extends IntegrationTestBase {
                 return new ChatResponse(List.of(new Generation(new AssistantMessage(generated))));
             });
             var report = tools.generarReporteDinamicoSqlTool(question);
-            assertThat(report.consultaSqlEjecutada()).isEqualTo(sql);
+            assertThat(report.consultaSqlEjecutada()).isEqualTo(sql + " LIMIT 500");
             assertThat(report.columnas()).containsExactly("sum");
             assertThat(report.totalFilas()).isEqualTo(1);
             assertThat(new java.math.BigDecimal(String.valueOf(report.muestraFilas().getFirst().getFirst())))

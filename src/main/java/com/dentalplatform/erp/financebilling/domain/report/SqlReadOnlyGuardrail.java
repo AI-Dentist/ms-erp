@@ -25,7 +25,7 @@ public final class SqlReadOnlyGuardrail {
             "\\ASELECT (.+?) FROM (report_[a-z]+)(?: WHERE (.+?))?(?: GROUP BY (.+?))?(?: ORDER BY (.+?))?(?: LIMIT ([0-9]{1,3}))?\\z",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern FORBIDDEN = Pattern.compile(
-            "\\b(drop|delete|update|insert|alter|into|union|with|grant|revoke|truncate|create|call|execute|copy|lock|for|merge|do|set|vacuum|information_schema|dblink[a-z0-9_]*|pg_[a-z0-9_]*|lo_[a-z0-9_]*)\\b",
+            "\\b(drop|delete|update|insert|alter|into|union|with|grant|revoke|truncate|create|call|execute|exec|copy|lock|for|merge|do|set|vacuum|information_schema|dblink[a-z0-9_]*|pg_[a-z0-9_]*|lo_[a-z0-9_]*)\\b",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern AGGREGATE = Pattern.compile("(sum|count|avg|min|max)\\(([a-z_]+|\\*)\\)");
     private static final Pattern FILTER = Pattern.compile(
@@ -69,7 +69,9 @@ public final class SqlReadOnlyGuardrail {
         }
         if (match.group(4) != null) { validateColumns(match.group(4), columns, false); }
         if (match.group(5) != null) { validateColumns(match.group(5), columns, true); }
-        if (match.group(6) != null) {
+        if (match.group(6) == null) {
+            sql = sql + " LIMIT 500";
+        } else {
             int limit = Integer.parseInt(match.group(6));
             if (limit < 1 || limit > 500) { throw denied(); }
         }

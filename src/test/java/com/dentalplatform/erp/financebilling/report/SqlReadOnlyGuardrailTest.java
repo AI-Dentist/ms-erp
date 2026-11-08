@@ -11,19 +11,28 @@ import static org.assertj.core.api.Assertions.*;
 class SqlReadOnlyGuardrailTest {
     private final SqlReadOnlyGuardrail guard = new SqlReadOnlyGuardrail();
 
+    /** SQL that already carries an explicit LIMIT: returned unchanged (trimmed). */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT status, SUM(total_bs), AVG(balance_bs), MIN(total_bs), MAX(total_bs), COUNT(*) FROM report_orders GROUP BY status ORDER BY status DESC LIMIT 500",
+        "SELECT code, price_bs FROM report_services WHERE price_bs >= 0 AND active = true ORDER BY price_bs ASC LIMIT 1",
+        "SELECT COUNT(*) FROM report_orders LIMIT 1"
+    })
+    void acceptsOnlyDocumentedGrammarWithExplicitLimit(String sql) {
+        assertThat(guard.validate(sql)).isEqualTo(sql.trim());
+    }
+
+    /** SQL without LIMIT: validate() must append LIMIT 500. */
     @ParameterizedTest
     @ValueSource(strings = {
         "SELECT * FROM report_income",
         "select day, category, payment_method, amount_bs, movement_count from report_income",
-        "SELECT status, SUM(total_bs), AVG(balance_bs), MIN(total_bs), MAX(total_bs), COUNT(*) FROM report_orders GROUP BY status ORDER BY status DESC LIMIT 500",
-        "SELECT code, price_bs FROM report_services WHERE price_bs >= 0 AND active = true ORDER BY price_bs ASC LIMIT 1",
         "SELECT * FROM report_income WHERE day >= '2026-01-01' AND category = 'COBRO_CUOTA'",
-        "SELECT COUNT(*) FROM report_orders LIMIT 1",
         "SELECT * FROM report_income WHERE category = 'SETTLEMENT'",
         "SELECT * FROM report_income WHERE category = 'UPDATED'"
     })
-    void acceptsOnlyDocumentedGrammar(String sql) {
-        assertThat(guard.validate(sql)).isEqualTo(sql.trim());
+    void appendsLimit500WhenAbsent(String sql) {
+        assertThat(guard.validate(sql)).isEqualTo(sql.trim() + " LIMIT 500");
     }
 
     @ParameterizedTest
@@ -55,7 +64,7 @@ class SqlReadOnlyGuardrailTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "CREATE", "GRANT",
-        "REVOKE", "MERGE", "COPY", "CALL", "DO", "EXECUTE", "SET", "LOCK", "VACUUM", "INTO",
+        "REVOKE", "MERGE", "COPY", "CALL", "DO", "EXECUTE", "EXEC", "SET", "LOCK", "VACUUM", "INTO",
         "pg_sleep", "pg_catalog", "dblink", "lo_import", "information_schema"})
     void rejectsForbiddenTokensEvenInsideStringLiterals(String token) {
         for (String variant : new String[]{token, token.toLowerCase(java.util.Locale.ROOT), token.toUpperCase(java.util.Locale.ROOT)}) {
