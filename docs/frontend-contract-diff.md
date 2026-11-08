@@ -8,6 +8,28 @@ Fuente de verdad: `docs/graphql/schema.graphqls` (SDL servido) y `docs/graphql/i
 
 La lectura demográfica añade únicamente `Paciente.fechaNacimiento: Date` y `Paciente.genero: String`, nullable, sin cambiar inputs ni permisos. `actualizarPaciente` sigue reemplazando: omitir estos campos los borra; para conservarlos hay que leerlos y reenviarlos (ver [guía](patient-demographic-readback.md)). `docs/graphql/introspection-live.json` es una instantánea histórica, no el contrato canónico actual; no se regenera consultando un servidor compartido.
 
+## Alta atómica de usuario con identidad
+
+`crearUsuarioConIdentidad` añade una entrada ADMIN para crear usuario y enlazar el
+subject Keycloak existente, con `odontologoId` opcional para un odontólogo existente.
+Todo el ERP se confirma o revierte en una sola transacción; no crea cuentas Keycloak.
+El replay idéntico devuelve `Usuario!` con el mismo `id` y sin otra auditoría; perfil, contraseña o asociación distintos
+fallan sin sobrescribir. Los callers de aprovisionamiento deben migrar a esta entrada:
+las operaciones legacy independientes no hacen rollback de un request anterior.
+Ver [contrato y errores](ms1-integration.md#alta-atómica-de-usuario-e-identidad-admin).
+
+```graphql
+mutation CrearUsuarioConIdentidad($input: CrearUsuarioConIdentidadInput!) {
+  crearUsuarioConIdentidad(input: $input) {
+    id username email nombreCompleto activo rol { codigo }
+  }
+}
+```
+
+```json
+{"input":{"usuario":{"rolCodigo":"CAJERO","username":"cajero-atomico","email":"cajero-atomico@example.test","nombreCompleto":"Cajero sintético","password":"Synthetic2026!"},"keycloakSubject":"synthetic:atomic-cashier"}}
+```
+
 ## Resumen
 
 **37 operaciones del frontend validadas: 2 válidas, 35 inválidas** contra el esquema servido.

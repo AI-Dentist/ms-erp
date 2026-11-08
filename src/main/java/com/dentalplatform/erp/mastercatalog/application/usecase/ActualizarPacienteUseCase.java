@@ -39,7 +39,8 @@ public class ActualizarPacienteUseCase {
                 command.fechaNacimiento(), command.genero(), command.telefonoWhatsapp(), command.email(),
                 command.direccion(), OffsetDateTime.now(clock));
         if (pacientes.existeCiNitDeOtro(editado.getCiNit(), editado.getId())) {
-            throw new BusinessRuleException("Ya existe un paciente con el CI/NIT " + editado.getCiNit());
+            throw new BusinessRuleException("Ya existe un paciente con el CI/NIT " + editado.getCiNit(),
+                    BusinessRuleException.PATIENT_CI_NIT_DUPLICATE);
         }
         Paciente guardado = pacientes.guardar(editado);
         auditoria.registrar("PACIENTE_ACTUALIZADO", "pacientes", guardado.getId(),

@@ -34,7 +34,7 @@ class Ms1IntegrationGuideValidationTest extends IntegrationTestBase {
             "```graphql\\n(.*?)\\n```\\n\\nVariables:\\n\\n```json\\n(.*?)\\n```", Pattern.DOTALL);
     private static final List<String> OPERATION_NAMES = List.of("ListarPacientesMs1", "DetallePacienteMs1",
             "CrearPacienteMs1", "ActualizarPacienteMs1", "EliminarPacienteMs1", "CatalogosMs1",
-            "FinanzasPacienteMs1");
+            "FinanzasPacienteMs1", "VincularUsuario", "MiUsuarioErp", "CrearUsuarioConIdentidad");
 
     @Autowired
     private GraphQlSource graphQlSource;
@@ -72,7 +72,8 @@ class Ms1IntegrationGuideValidationTest extends IntegrationTestBase {
         assertThat(rootFields).containsExactly("listarPacientes", "obtenerPacientePorId", "crearPaciente",
                 "actualizarPaciente", "eliminarPaciente", "listarOdontologos", "listarEspecialidades",
                 "listarConsultorios", "listarServiciosOdontologicos", "listarOrdenesCobro",
-                "listarCuotasPendientesPorPaciente");
+                "listarCuotasPendientesPorPaciente", "vincularIdentidadUsuario", "obtenerMiUsuarioId",
+                "crearUsuarioConIdentidad");
     }
 
     @Test
@@ -99,7 +100,7 @@ class Ms1IntegrationGuideValidationTest extends IntegrationTestBase {
                 assertThat(payload.serviciosRealizados().getFirst().precioUnitarioBs()).isEqualByComparingTo("150.00");
             }
         }
-        assertThat(count).isEqualTo(8);
+        assertThat(count).isEqualTo(OPERATION_NAMES.size() + 1);
         assertThat(clinicalMessages).isEqualTo(1);
     }
 

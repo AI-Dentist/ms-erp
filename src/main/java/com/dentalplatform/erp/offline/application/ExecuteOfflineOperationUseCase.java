@@ -1,0 +1,150 @@
+package com.dentalplatform.erp.offline.application;
+
+import com.dentalplatform.erp.configsecurity.application.port.OfflineSyncIdentityPort;
+import com.dentalplatform.erp.offline.domain.OfflineOperationReceipt;
+import com.dentalplatform.erp.offline.domain.OfflineSyncFailure;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.Clock;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class ExecuteOfflineOperationUseCase {
+    private static final Logger log = LoggerFactory.getLogger(ExecuteOfflineOperationUseCase.class);
+    private final ConfirmOfflineSyncUseCase sessions;
+    private final OfflineOperationStore operations;
+    private final OfflineSyncIdentityPort identities;
+    private final OfflinePayloadCodec codec;
+    private final Clock clock;
+    private final Map<OfflineOperationReceipt.Type, OfflineOperationHandler> handlers;
+    private final TransactionTemplate requiresNew;
+
+    public ExecuteOfflineOperationUseCase(ConfirmOfflineSyncUseCase sessions, OfflineOperationStore operations,
+                                          OfflineSyncIdentityPort identities, OfflinePayloadCodec codec, Clock clock,
+                                          PlatformTransactionManager transactions,
+                                          List<OfflineOperationHandler> handlers) {
+        this.sessions = sessions;
+        this.operations = operations;
+        this.identities = identities;
+        this.codec = codec;
+        this.clock = clock;
+        this.requiresNew = new TransactionTemplate(transactions);
+        this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.handlers = new EnumMap<>(OfflineOperationReceipt.Type.class);
+        for (var handler : handlers) {
+            if (this.handlers.put(handler.type(), handler) != null) {
+                throw new IllegalStateException("Duplicate offline operation handler");
+            }
+        }
+    }
+
+    public boolean supports(OfflineOperationReceipt.Type type) {
+        return handlers.containsKey(type);
+    }
+
+    private record Locked(ConfirmOfflineSyncUseCase.Context context, OfflineOperationReceipt receipt) { }
+
+    private Locked lock(OfflineOperationRequest request) {
+        var context = sessions.requireConfirmed(request.sessionId());
+        var caller = context.caller();
+        if (!OfflineOperationStatusUseCase.allowed(caller.role(), request.type())) {
+            throw new OfflineSyncFailure("PERMISSION_REVOKED");
+        }
+        var header = operations.lockForExecution(caller.actorId(), request.operationId())
+                .orElseThrow(() -> new OfflineSyncFailure("INVALID_INPUT"));
+        sessions.requireConfirmed(request.sessionId());
+        if (!header.issuer().equals(caller.issuer()) || !header.subject().equals(caller.subject())) {
+            throw new OfflineSyncFailure("ACTOR_LINK_CHANGED");
+        }
+        if (!OfflineOperationStatusUseCase.allowed(caller.role(), header.type())) {
+            throw new OfflineSyncFailure("PERMISSION_REVOKED");
+        }
+        if (header.type() != request.type() || !header.payloadHash().equals(codec.hash(request.type(), request.payload()))) {
+            throw new OfflineSyncFailure("PAYLOAD_MISMATCH");
+        }
+        return new Locked(context, operations.receipt(caller.actorId(), request.operationId()).orElseThrow());
+    }
+
+    @Transactional
+    public OfflineOperationReceipt execute(OfflineOperationRequest request) {
+        var locked = lock(request);
+        var current = locked.receipt();
+        if (current.state() != OfflineOperationReceipt.State.PREPARED
+                && current.state() != OfflineOperationReceipt.State.BLOCKED) return current;
+        var handler = handlers.get(request.type());
+        // The missing-handler invariant lives here too, so a future caller cannot receive a PREPARED receipt.
+        if (handler == null) throw new OfflineSyncFailure("INVALID_INPUT");
+        var result = handler.execute(request.payload(), locked.context().caller().actorId());
+        sessions.requireConfirmed(request.sessionId());
+        operations.confirm(locked.context().caller().actorId(), request.operationId(), result,
+                clock.instant().truncatedTo(ChronoUnit.MICROS).atOffset(ZoneOffset.UTC));
+        return operations.receipt(locked.context().caller().actorId(), request.operationId()).orElseThrow();
+    }
+
+    /** Marker class for the degraded case that intentionally writes nothing: the caller is not the owner. */
+    private static final class SessionActorMismatchNoWrite { }
+
+    /** Marker class for the degraded case where the denial statement ran but changed no row. */
+    private static final class NoRowUpdatedNoWrite { }
+
+    /**
+     * Records a denial on the existing reservation instead of deleting it: identity, type and payload hash
+     * stay immutable, so a later replay with altered intent still mismatches and never executes. The row moves
+     * to a durable non-success state that keeps a legitimate retry of the same frozen intent possible.
+     * The live identity port needs its own transaction, so this runs isolated from the rolled-back execution.
+     * The write is best-effort, so every degraded case is logged at WARN the same way - an identity mismatch that
+     * writes nothing, a statement that changes no row, and an unavailable identity or ledger - because the denial
+     * response alone never reveals that its durable reason is missing.
+     */
+    public void recordDenied(OfflineOperationRequest request, OfflineSyncFailure denial) {
+        if (request == null || request.operationId() == null || request.sessionId() == null) return;
+        // A session/actor mismatch means the caller is not the owner: write nothing at all, but never silently.
+        if ("SESSION_ACTOR_MISMATCH".equals(denial.code())) {
+            logNotRecorded(request, denial, SessionActorMismatchNoWrite.class.getName());
+            return;
+        }
+        try {
+            var caller = identities.principal();
+            // An explicit template keeps this write out of the failed execution while making every failure,
+            // including a commit-time unexpected rollback, non-fatal: the original denial stays the response.
+            Integer changed = requiresNew.execute(status -> operations.recordSessionDenial(request.sessionId(),
+                    request.operationId(), denial.code(), caller.issuer(), caller.subject()));
+            // No row changed: the intent is already CONFIRMED/CONFLICT, absent, or owned by another identity.
+            // Nothing is retried here; the degraded outcome is only made observable.
+            if (changed == null || changed == 0) {
+                logNotRecorded(request, denial, NoRowUpdatedNoWrite.class.getName());
+            }
+        } catch (RuntimeException unavailableIdentityOrLedger) {
+            logNotRecorded(request, denial, unavailableIdentityOrLedger.getClass().getName());
+        }
+    }
+
+    /** One WARN shape for every degraded write, so an operator sees the same three fields in all three cases. */
+    private static void logNotRecorded(OfflineOperationRequest request, OfflineSyncFailure denial, String cause) {
+        log.warn("Offline denial reason was not recorded: operationId={} reason={} exceptionOrMarkerClass={}",
+                request.operationId(), denial.code(), cause);
+    }
+
+    /** Called through the proxy only AFTER execute has returned exceptionally and rolled back. */
+    @Transactional
+    public OfflineOperationReceipt recover(OfflineOperationRequest request, String reason,
+                                            OfflineOperationReceipt.State state) {
+        var locked = lock(request);
+        var current = locked.receipt();
+        if (current.state() == OfflineOperationReceipt.State.CONFIRMED
+                || current.state() == OfflineOperationReceipt.State.CONFLICT) return current;
+        operations.failure(locked.context().caller().actorId(), request.operationId(), reason, state);
+        return operations.receipt(locked.context().caller().actorId(), request.operationId()).orElseThrow();
+    }
+}

@@ -86,6 +86,7 @@ class FinanceBillingIntegrationTest extends IntegrationTestBase {
         UUID order = UUID.fromString("80000000-0000-0000-0000-000000000001");
         UUID quota = firstQuota(order);
         when(pdf.generar(any())).thenReturn(new byte[]{1, 2});
+        when(storage.referencia(any())).thenReturn("file:///receipts/test.pdf");
         when(storage.guardar(any(), any())).thenReturn("file:///receipts/test.pdf");
         String receiptId = graphQl.document(PAY).variable("input", payInput(quota, CASHIER)).execute()
                 .path("cobrarCuotaEnEfectivo.numeroRecibo").entity(String.class).matches(s -> s.matches("REC-\\d{4}-\\d{6,}"))
@@ -144,6 +145,7 @@ class FinanceBillingIntegrationTest extends IntegrationTestBase {
     void storageFailureAlsoLeavesFinancialCommitIntact() {
         UUID order = createOrder(), quota = firstQuota(order);
         when(pdf.generar(any())).thenReturn(new byte[]{1});
+        when(storage.referencia(any())).thenReturn("file:///receipts/unavailable.pdf");
         when(storage.guardar(any(), any())).thenThrow(new IllegalStateException("Storage unavailable"));
         graphQl.document(PAY).variable("input", payInput(quota, CASHIER)).execute()
                 .path("cobrarCuotaEnEfectivo.pdfUrlS3").valueIsNull();

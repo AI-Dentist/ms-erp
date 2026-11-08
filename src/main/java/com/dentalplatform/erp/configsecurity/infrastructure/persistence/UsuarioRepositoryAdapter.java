@@ -2,6 +2,7 @@ package com.dentalplatform.erp.configsecurity.infrastructure.persistence;
 
 import com.dentalplatform.erp.configsecurity.domain.model.Usuario;
 import com.dentalplatform.erp.configsecurity.domain.repository.UsuarioRepository;
+import com.dentalplatform.erp.shared.domain.exception.BusinessRuleException;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -27,6 +28,23 @@ class UsuarioRepositoryAdapter implements UsuarioRepository {
     @Override
     public Optional<Usuario> buscarPorId(UUID id) {
         return repository.findById(id).map(UsuarioRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public Optional<Usuario> buscarPorKeycloakId(String keycloakId) {
+        return repository.findByKeycloakId(keycloakId).map(UsuarioRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public Optional<Usuario> bloquearPorId(UUID id) {
+        return repository.bloquearPorId(id).map(UsuarioRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public void vincularKeycloakId(UUID id, String keycloakId) {
+        if (repository.vincularKeycloakId(id, keycloakId) != 1) {
+            throw new BusinessRuleException("La identidad odontológica ya está vinculada");
+        }
     }
 
     @Override

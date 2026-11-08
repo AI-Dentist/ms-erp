@@ -18,7 +18,11 @@ public final class EmbeddedPostgresSupport {
     public static synchronized EmbeddedPostgres postgres() {
         if (instance == null) {
             try {
-                instance = EmbeddedPostgres.builder().start();
+                // Spring caches one context (and Hikari pool) per distinct test configuration;
+                // the default 100 connections is exhausted by the full suite.
+                instance = EmbeddedPostgres.builder()
+                        .setServerConfig("max_connections", "400")
+                        .start();
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     try {
                         instance.close();

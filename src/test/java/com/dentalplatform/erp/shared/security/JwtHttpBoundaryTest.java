@@ -83,7 +83,7 @@ class JwtHttpBoundaryTest {
 
     String token(RSAKey signingKey, String issuer, String subject, String username, String role, Instant expiry)
             throws Exception {
-        var claims = new JWTClaimsSet.Builder().issuer(issuer).subject(subject)
+        var claims = new JWTClaimsSet.Builder().issuer(issuer).subject(subject).audience("ms-erp")
                 .claim("preferred_username", username).claim("realm_access", Map.of("roles", List.of(role)))
                 .issueTime(Date.from(Instant.now().minusSeconds(600))).expirationTime(Date.from(expiry)).build();
         var jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEY.getKeyID()).build(), claims);

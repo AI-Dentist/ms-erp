@@ -17,9 +17,17 @@ public class LocalReceiptStorageAdapter implements ReceiptStoragePort {
     }
 
     @Override
+    public String referencia(UUID reciboId) {
+        return directory.resolve(reciboId + ".pdf").toUri().toString();
+    }
+
+    @Override
+    public boolean existe(UUID reciboId) { return Files.isRegularFile(directory.resolve(reciboId + ".pdf")); }
+
+    @Override
     public String resolverDescarga(UUID reciboId, String reference) {
         if (reference == null) return null;
-        String expected = directory.resolve(reciboId + ".pdf").toUri().toString();
+        String expected = referencia(reciboId);
         if (!expected.equals(reference)) throw new IllegalArgumentException("Referencia de recibo inválida");
         return expected;
     }

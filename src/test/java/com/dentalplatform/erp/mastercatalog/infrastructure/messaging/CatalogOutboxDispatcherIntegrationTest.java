@@ -37,6 +37,7 @@ class CatalogOutboxDispatcherIntegrationTest extends IntegrationTestBase {
     @Autowired com.dentalplatform.erp.mastercatalog.infrastructure.outbox.ConfirmedCatalogSender sender;
     @Autowired com.dentalplatform.erp.mastercatalog.infrastructure.outbox.CatalogOutboxSettings settings;
     @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+    @Autowired com.dentalplatform.erp.configsecurity.application.usecase.RegistrarAuditoriaUseCase auditoria;
 
     @BeforeEach
     void isolateDueRows() {
@@ -135,7 +136,7 @@ class CatalogOutboxDispatcherIntegrationTest extends IntegrationTestBase {
             var one = executor.submit(this::dispatch);
             assertThat(sending.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(row(first).get("sent_at")).isNull();
-            var otherWorker = new CatalogOutboxDispatcher(jdbc, sender, settings, transactions);
+            var otherWorker = new CatalogOutboxDispatcher(jdbc, sender, settings, transactions, auditoria);
             var two = executor.submit(otherWorker::dispatch);
             two.get(500, TimeUnit.MILLISECONDS); // must skip the locked row, not wait for its sender
             release.countDown();
@@ -173,7 +174,7 @@ class CatalogOutboxDispatcherIntegrationTest extends IntegrationTestBase {
                 transactions.rollback(status);
             }
         };
-        var crashingWorker = new CatalogOutboxDispatcher(jdbc, sender, settings, lostCommit);
+        var crashingWorker = new CatalogOutboxDispatcher(jdbc, sender, settings, lostCommit, auditoria);
         org.assertj.core.api.Assertions.assertThatThrownBy(crashingWorker::dispatch)
                 .isInstanceOf(IllegalStateException.class);
         assertThat(row(id).get("sent_at")).isNull();
@@ -203,7 +204,7 @@ class CatalogOutboxDispatcherIntegrationTest extends IntegrationTestBase {
         try (var executor = Executors.newFixedThreadPool(2)) {
             var one = executor.submit(this::dispatch);
             assertThat(sendingFirst.await(5, TimeUnit.SECONDS)).isTrue();
-            var otherWorker = new CatalogOutboxDispatcher(jdbc, otherSender, settings, transactions);
+            var otherWorker = new CatalogOutboxDispatcher(jdbc, otherSender, settings, transactions, auditoria);
             executor.submit(otherWorker::dispatch).get(500, TimeUnit.MILLISECONDS);
             assertThat(row(second).get("sent_at")).isNotNull();
             assertThat(row(first).get("sent_at")).isNull();

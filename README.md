@@ -6,6 +6,9 @@ Backend ERP odontológico: configuración, catálogos, cobros y reportes financi
 
 Consulte la [guía de integración de MS1](docs/ms1-integration.md): responsabilidades,
 GraphQL y permisos, pacientes, contratos RabbitMQ, MCP, excepciones REST e idempotencia.
+La [identidad canónica del odontólogo](docs/ms1-integration.md#identidad-canónica-del-odontólogo)
+se resuelve desde el subject JWT con `obtenerMiOdontologoId`; ADMIN aprovisiona los enlaces
+mediante `vincularIdentidadOdontologo`, sin cambiar UUID ni inferirlos del correo o nombre.
 
 ## Inicio local
 
@@ -24,13 +27,14 @@ Compose inicia PostgreSQL, RabbitMQ y SeaweedFS (emulador S3 local; crea el buck
 
 **No exponga `dev` a redes no confiables:** omite Keycloak y cada petición anónima actúa como `admin` con todos los roles. Este bypass requiere la configuración explícita existente `erp.security.dev-mode=true` (el perfil `dev` la activa); no la habilite en despliegues protegidos. Por defecto, o con `false`, se exige JWT. No reutilice credenciales de Compose en producción.
 
-Fuera de `dev`, configure `KEYCLOAK_ISSUER_URI` con el issuer exacto del realm. El servidor consulta su discovery/JWKS y valida firma, issuer y expiración; necesita conectividad al issuer. Los roles proceden de `realm_access.roles`, el nombre principal de `preferred_username` y la identidad de Keycloak de `sub`. El contrato actual no impone un audience adicional. Envíe `Authorization: Bearer <token>`; token ausente/inválido devuelve 401. Rol insuficiente devuelve 403 en REST; GraphQL mantiene HTTP 200 con error `FORBIDDEN`. Compose no aprovisiona Keycloak ni un realm.
+Fuera de `dev`, configure `KEYCLOAK_ISSUER_URI` con el issuer exacto del realm. El servidor consulta su discovery/JWKS y valida firma, issuer y expiración; necesita conectividad al issuer. Los roles proceden de `realm_access.roles`, el nombre principal de `preferred_username` y la identidad de Keycloak de `sub`. Las cadenas normal y `local` exigen `aud` igual a `erp.security.jwt.audience` (`ERP_JWT_AUDIENCE`, por defecto `ms-erp`), como string exacto o miembro de una lista de strings. Un claim ausente, incorrecto o mal formado devuelve 401 antes de ejecutar la operación; una configuración vacía o solo con espacios impide el arranque. No se recortan ni normalizan los valores del token. Envíe `Authorization: Bearer <token>`; token ausente/inválido devuelve 401. Rol insuficiente devuelve 403 en REST; GraphQL mantiene HTTP 200 con error `FORBIDDEN`. Compose no aprovisiona Keycloak ni un realm.
 
 | Configuración | Variables |
 |---|---|
 | Base principal | `ERP_DB_URL`, `ERP_DB_USER`, `ERP_DB_PASSWORD` |
 | RabbitMQ | `ERP_RABBIT_HOST`, `ERP_RABBIT_PORT`, `ERP_RABBIT_USER`, `ERP_RABBIT_PASSWORD` |
 | Puerto HTTP | `ERP_PORT` (8081 por defecto) |
+| Audiencia JWT normal y local | `ERP_JWT_AUDIENCE` (`ms-erp` por defecto; no puede estar vacía) |
 | IA | `OPENAI_API_KEY`, `ERP_AI_MODEL` (`gpt-4o-mini` por defecto) |
 | Endpoint IA opcional | `SPRING_AI_OPENAI_BASE_URL`: URL base de API del proveedor compatible con OpenAI |
 | Base de reportes | `ERP_REPORT_DB_USER`, `ERP_REPORT_DB_PASSWORD`; opcional `ERP_REPORT_DB_URL` |
@@ -51,7 +55,7 @@ docker compose up -d
 - PagoFácil en modo mock, `simularConfirmacionQrDev` habilitado y n8n deshabilitado. La simulación exige la propiedad y el perfil `dev` o `local`, y se rechaza si hay un perfil `prod`.
 - Los PDF de recibos se guardan en S3 y `Recibo.pdfUrlS3` devuelve una URL prefirmada descargable desde el navegador.
 - Flyway carga también `classpath:db/local` (datos sintéticos); solo este perfil lo hace.
-- **`X-Dev-User: <username>`**: debe ser un usuario `activo` de `usuarios` (p. ej. `admin` del seed). Solo se concede el rol de ese usuario (`ROLE_<codigo>`), de modo que `@PreAuthorize` sigue aplicando (un CAJERO no puede ejecutar mutaciones de ADMIN). Cabecera ausente, vacía, repetida, desconocida o inactiva → `401`. Si llega `Authorization: Bearer`, la cabecera se ignora y el JWT se valida contra `ERP_LOCAL_JWT_ISSUER_URI` (por defecto el Keycloak local `http://localhost:8180/realms/dental-platform`; vacío = Bearer deshabilitado). No existe el administrador anónimo del perfil `dev`.
+- **`X-Dev-User: <username>`**: debe ser un usuario `activo` de `usuarios` (p. ej. `admin` del seed). Solo se concede el rol de ese usuario (`ROLE_<codigo>`), de modo que `@PreAuthorize` sigue aplicando (un CAJERO no puede ejecutar mutaciones de ADMIN). Cabecera ausente, vacía, repetida, desconocida o inactiva → `401`. Si llega `Authorization: Bearer`, la cabecera se ignora y el JWT se valida contra `ERP_LOCAL_JWT_ISSUER_URI` (por defecto el Keycloak local `http://localhost:8180/realms/dental-platform`; vacío = Bearer deshabilitado). También se exige la audiencia `ERP_JWT_AUDIENCE` (por defecto `ms-erp`); un Bearer rechazado nunca recurre a `X-Dev-User`. El proveedor debe emitir esa audiencia en el access token (por ejemplo, mediante un mapper de Keycloak); esta unidad no modifica ni aprovisiona el realm. No existe el administrador anónimo del perfil `dev`.
 - **Keycloak local (solo desarrollo):** `docker compose up -d keycloak` (imagen fija 26.8.1, realm `dental-platform` importado de `docker/keycloak/`, loopback `:8180`). Usuarios `admin-scz`/`caja-scz`/`recepcion-scz` con contraseña de desarrollo `LocalDev2026!`, cliente público PKCE `mf-erp` para `http://localhost:4201` y cliente de pruebas `ms1-local-tests` (*password grant*, nunca en producción). El emisor se resuelve de forma perezosa: MS1 arranca con Keycloak caído y los Bearer reciben `401` hasta que responde. Detalle, claims y `curl` en [docs/keycloak-local.md](docs/keycloak-local.md); `scripts/local-smoke.sh` repite las comprobaciones de autorización con Bearer si el emisor responde.
 - CORS: solo el origen `http://localhost:4201` (lista `erp.cors.allowed-origins`, vacía fuera de `local`, nunca `*`), métodos GET/POST/OPTIONS, cabeceras `Authorization, Content-Type, Accept, Idempotency-Key, X-Dev-User`; expone `Idempotency-Replayed` y `Content-Disposition`.
 - Seguridad: la aplicación **no arranca** si `erp.security.local-dev-user.enabled=true` se combina con un perfil distinto de `local`, con `erp.security.dev-mode=true` o si `local` convive con `prod`/`production`. En la cadena por defecto `X-Dev-User` se ignora por completo.
@@ -140,7 +144,7 @@ Se mantienen GraphQL y las dos rutas REST de negocio (callback y exportación); 
 
 | Frontera | Evidencia local | Pendiente de aceptación live |
 |---|---|---|
-| JWT | RSA efímera, discovery/JWKS HTTP, bearer contra cadena no-dev: firma/issuer/expiración 401; permisos REST/GraphQL; principal firmado; replay aislado por identidad/roles; rechazos sin cambios de filas/secuencias | Realm y despliegue Keycloak reales, rotación operacional |
+| JWT | RSA efímera, discovery/JWKS HTTP, bearer contra cadenas normal/local: firma/issuer/expiración/audience 401, tipos de claim originales y configuración vacía;  permisos REST/GraphQL; principal firmado; replay aislado por identidad/roles; rechazos sin cambios de filas/secuencias | Realm y despliegue Keycloak reales, rotación operacional |
 | n8n | HTTP 500 y stall real; timeout configurado 300 ms, pago retorna antes de 4 s y conserva commit; deshabilitado sin HTTP | Servicio n8n desplegado, saturación sostenida |
 | S3 | SDK real contra stub HTTP, firma, cuerpo, timeout, referencia persistida y autorización GraphQL; modo AWS: cadena de credenciales, región/endpoint y presign con proveedor simulado | SeaweedFS real (perfil live); AWS real, TLS/IAM del despliegue |
 | RabbitMQ | PostgreSQL/outbox real; ACK/NACK/retorno/timeout/retry simulados | Wire real, caída/reanudación y saga por listener |

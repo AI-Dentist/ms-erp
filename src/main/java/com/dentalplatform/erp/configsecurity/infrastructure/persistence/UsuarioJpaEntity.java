@@ -18,7 +18,9 @@ public class UsuarioJpaEntity {
     @Id
     private UUID id;
 
-    @Column(name = "keycloak_id", unique = true, length = 100)
+    // Ordinary aggregate merges must not erase a link established after their snapshot was read.
+    // Existing rows receive identity only through the conditional provisioning update.
+    @Column(name = "keycloak_id", unique = true, length = 100, updatable = false)
     private String keycloakId;
 
     @ManyToOne(fetch = FetchType.EAGER, optional = false)

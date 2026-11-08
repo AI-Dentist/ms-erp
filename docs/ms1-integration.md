@@ -9,6 +9,9 @@ Las mutaciones se muestran como documentación: no ejecutarlas contra entornos c
 - [Conectar y autenticar](#conectar-y-autenticar)
 - [Pacientes: leer y escribir](#pacientes-leer-y-escribir)
 - [Otros catálogos, identidad y finanzas](#otros-catálogos-identidad-y-finanzas)
+- [Identidad canónica del usuario ERP](#identidad-canónica-del-usuario-erp)
+- [Alta atómica de usuario e identidad](#alta-atómica-de-usuario-e-identidad-admin)
+- [Identidad canónica del odontólogo](#identidad-canónica-del-odontólogo)
 - [RabbitMQ: sincronización y consulta finalizada](#rabbitmq-sincronización-y-consulta-finalizada)
 - [MCP, REST e idempotencia](#mcp-rest-e-idempotencia)
 - SDL publicado: [schema.graphqls](graphql/schema.graphqls) e [introspección](graphql/introspection.json).
@@ -39,9 +42,17 @@ identidad autorizada y los roles adecuados; no asumir acceso anónimo ni un rol 
 - Enviar `Content-Type: application/json`, `Authorization: Bearer <token>` y un cuerpo
   `{"query":"<documento GraphQL>","operationName":"<nombre>","variables":{}}`.
   Sustituir `variables` por el JSON asociado al ejemplo.
-- MS1 valida JWT de Keycloak (firma, issuer y expiración); los roles vienen de
+- MS1 valida JWT de Keycloak (firma, issuer, expiración y audiencia); los roles vienen de
   `realm_access.roles`. `KEYCLOAK_ISSUER_URI` configura el issuer, **no una API de login de MS1**.
   Obtener el token mediante el flujo de identidad acordado con Keycloak.
+- Tanto la cadena normal como `local` exigen `erp.security.jwt.audience`, configurada
+  mediante `ERP_JWT_AUDIENCE` (por defecto `ms-erp`). `aud` debe ser ese string exacto
+  o una lista de strings que lo contenga; no se recorta ni normaliza. Claims ausentes,
+  incorrectos o mal formados (incluidos elementos no string o nulos) devuelven HTTP 401
+  antes de cualquier mutación o auditoría. Una audiencia configurada vacía o solo con
+  espacios impide el arranque; no desactiva la política. La firma, issuer, vigencia y roles
+  siguen siendo obligatorios. El proveedor debe emitir esa audiencia en el access token;
+  esta unidad no modifica el realm ni despliega mappers.
 - Sin token válido: 401. GraphQL puede responder HTTP 200 con `errors`, incluido
   `FORBIDDEN`: comprobar siempre `errors`, no solo el código HTTP.
 - Solo desarrollo: `local` admite `X-Dev-User` de un usuario activo y conserva su rol;
@@ -207,6 +218,186 @@ Variables:
 Importes en Bolivianos (`Bs`). El cobro actualiza cuota, saldo, ingreso y recibo en
 una transacción. `Recibo.pdfUrlS3` exige CAJA; un fallo posterior de PDF/storage no
 justifica repetir el cobro. Historial: ADMIN ve todo, los demás solo lo propio.
+
+## Identidad canónica del usuario ERP
+
+**ADMIN/CAJERO deben obtener el UUID del usuario ERP con `obtenerMiUsuarioId`,
+no convertir `sub` en UUID ni buscar por `preferred_username`.** No requiere odontólogo:
+no crear uno ficticio para vincular un cajero. El rol almacenado del usuario no debe
+coincidir necesariamente con el rol JWT; no se añade esa política.
+
+| Operación / firma SDL | Roles JWT | Contrato |
+|---|---|---|
+| Query `obtenerMiUsuarioId: UUID!` | ADMIN, CAJERO | Sin argumentos; subject JWT exacto → usuario activo; solo lectura |
+| Mutation `vincularIdentidadUsuario(input: VincularIdentidadUsuarioInput!): UUID!` | ADMIN | Vincula usuario activo y devuelve su UUID |
+| Input `VincularIdentidadUsuarioInput` | ADMIN | `usuarioId: UUID!`, `keycloakSubject: String!` |
+
+### Vincular y consultar
+
+1. ADMIN crea/selecciona el usuario con las operaciones existentes y confirma su subject
+   exacto con el proveedor de identidad de confianza; nunca lo deduce de nombre o email.
+2. Para un usuario sin odontólogo, ejecuta la mutación siguiente. El subject es texto opaco,
+   no blanco y de hasta **100 puntos de código Unicode**; se conserva sin trim ni normalización.
+3. El titular consulta su identidad con un access token válido ADMIN/CAJERO.
+
+```graphql
+mutation VincularUsuario($input: VincularIdentidadUsuarioInput!) {
+  vincularIdentidadUsuario(input: $input)
+}
+```
+
+Variables:
+
+```json
+{"input":{"usuarioId":"77777777-7777-4777-8777-777777777777","keycloakSubject":"synthetic:cashier-subject"}}
+```
+
+```graphql
+query MiUsuarioErp { obtenerMiUsuarioId }
+```
+
+Variables:
+
+```json
+{}
+```
+
+Un enlace nuevo registra `IDENTIDAD_USUARIO_VINCULADA` sobre `usuarios`, con el subject
+exacto en `detalleJson`; no emite eventos de catálogo. Repetir los dos valores exactos
+devuelve el mismo ID **sin otra auditoría**. Bloqueo de usuario, UPDATE condicional y
+restricción única existentes arbitran reclamaciones concurrentes: una vinculación y una
+auditoría; el perdedor no reserva su usuario. No hay migración, backfill ni reasignación.
+
+| Fallo | Respuesta |
+|---|---|
+| JWT ausente, firma/issuer/vigencia/audiencia inválidos | HTTP 401 |
+| Rol insuficiente | GraphQL `FORBIDDEN` |
+| Consulta sin subject JWT o en blanco (también principal `X-Dev-User`/bypass dev) | `FORBIDDEN`: `Se requiere un JWT con subject` |
+| Consulta con enlace ausente o usuario inactivo | `NOT_FOUND`: `Identidad de usuario no disponible` |
+| Vinculación con UUID inexistente | `NOT_FOUND`: `Usuario no encontrado` |
+| Vinculación con usuario inactivo, incluso repetida | `BAD_REQUEST`: `El usuario está inactivo` |
+| Subject vacío, en blanco o mayor de 100 puntos de código | `BAD_REQUEST`: `El subject de Keycloak debe tener entre 1 y 100 caracteres y no estar en blanco` |
+| Subject de otro usuario o intento de sobrescribir/reasignar | `BAD_REQUEST`: `La identidad de usuario ya está vinculada` |
+| Conflicto concurrente de unicidad | `BAD_REQUEST`: `El registro viola una restricción de unicidad o integridad` |
+
+Los errores GraphQL usan HTTP 200 con `errors`; los rechazos no alteran enlaces ni auditoría.
+No hay fallback por username/email, UUID supuesto ni escritura durante la consulta.
+
+**Secuencia para odontólogos:** usar directamente el aprovisionador pareado
+`vincularIdentidadOdontologo` descrito abajo. Vincular primero solo el usuario deja un enlace
+parcial que el aprovisionador pareado **rechaza intencionalmente**, aunque el subject coincida.
+Esta API no relaja ni repara esa limitación. Un usuario ya aprovisionado por la operación
+pareada sí puede consultar su usuario ERP con ADMIN/CAJERO y repetir el enlace de usuario exacto.
+
+**Límite financiero:** las mutaciones financieras existentes siguen recibiendo
+`usuarioCajeroId` del cliente. Esta consulta permite obtener un ID canónico, pero no cambia
+ni resuelve la autorización servidor de actuar en nombre de otro usuario. Cualquier nueva
+política self-only requiere un cambio explícito independiente.
+
+## Alta atómica de usuario e identidad (ADMIN)
+
+Para **crear un usuario nuevo y vincularlo**, usar
+`crearUsuarioConIdentidad(input: CrearUsuarioConIdentidadInput!): Usuario!`.
+La cuenta Keycloak debe existir previamente: el ERP no crea cuentas ni llama al
+proveedor. El subject se confirma con una fuente de confianza; no se deduce por email.
+
+```graphql
+mutation CrearUsuarioConIdentidad($input: CrearUsuarioConIdentidadInput!) {
+  crearUsuarioConIdentidad(input: $input) {
+    id username email nombreCompleto activo rol { codigo }
+  }
+}
+```
+
+Variables:
+
+```json
+{"input":{"usuario":{"rolCodigo":"CAJERO","username":"cajero-atomico","email":"cajero-atomico@example.test","nombreCompleto":"Cajero sintético","password":"Synthetic2026!"},"keycloakSubject":"synthetic:atomic-cashier"}}
+```
+
+Los valores son sintéticos; no registrar contraseñas ni variables de producción.
+
+El input contiene `usuario: CrearUsuarioInput!`, `keycloakSubject: String!` y
+`odontologoId: UUID` opcional. Para asociar un odontólogo **existente, activo y sin
+enlace**, enviar su UUID en el mismo input. No vincular primero solo el usuario:
+el helper odontológico sigue rechazando enlaces parciales. No se crea ni recrea
+al odontólogo, ni se añade una restricción de coincidencia entre rol ERP y rol JWT.
+
+Creación, enlace(s) y auditorías comparten una sola transacción local. Si falla
+cualquier paso, tampoco queda el usuario recién creado; el mismo input puede
+reintentarse tras recuperarse la dependencia. La reclamación del subject se
+serializa hasta commit, conservando el orden de bloqueo usuario→odontólogo.
+Restricciones únicas y actualizaciones condicionales protegen también las carreras
+contra las operaciones legacy, que no participan del nuevo bloqueo de subject.
+
+Un replay exacto sobre usuario activo devuelve `Usuario!` con el mismo `id`, sin escrituras ni
+otra auditoría: compara username/email normalizados, nombre recortado sin cambiar
+mayúsculas internas, rol exacto, contraseña verificada contra el hash existente y
+la misma asociación odontológica opcional. No se guarda contraseña en claro ni
+huella del request. Cambiar perfil, contraseña o asociación devuelve
+`BAD_REQUEST: La identidad de usuario ya está vinculada`, sin sobrescribir.
+UUID odontológico inexistente/inactivo/conflictivo conserva los errores del enlace
+existente; rol no ADMIN devuelve `FORBIDDEN`. Subject opaco: no blanco, hasta
+100 puntos de código Unicode, sin trim ni cambio de mayúsculas.
+No adopta usuarios legacy por coincidencia de username/email ni repara enlaces parciales.
+
+**Migración del caller:** `crearUsuario` y `vincularIdentidad*` siguen disponibles
+como operaciones independientes compatibles. Dos requests separados **no** son
+atómicos: una creación confirmada antes de un enlace fallido permanece. El caller
+de aprovisionamiento debe adoptar esta nueva mutación; no se promete rollback
+retroactivo ni una transacción distribuida con Keycloak.
+
+## Identidad canónica del odontólogo
+
+**MS2/MS3 deben usar el UUID devuelto por `obtenerMiOdontologoId`, no el `sub` del JWT
+como UUID de odontólogo.** No cambian las claves primarias, las validaciones financieras
+ni el contrato de eventos. No se añade directorio de cuentas ni campos de enlace a los listados.
+
+| Operación / firma SDL | Roles | Contrato |
+|---|---|---|
+| Query `obtenerMiOdontologoId: UUID!` | ODONTOLOGO o ADMIN | Sin argumentos; usa exclusivamente el `sub` verificado, usuario activo y odontólogo activo asociado |
+| Mutation `vincularIdentidadOdontologo(input: VincularIdentidadOdontologoInput!): UUID!` | ADMIN | Aprovisiona ambos enlaces en una transacción y devuelve el UUID canónico |
+| Input `VincularIdentidadOdontologoInput` | ADMIN | `usuarioId: UUID!`, `odontologoId: UUID!`, `keycloakSubject: String!` |
+
+`keycloakSubject` es texto opaco, sensible a mayúsculas: no necesita ser UUID.
+Debe tener 1–100 caracteres y no estar en blanco; no se recorta ni normaliza.
+`username`, email, nombre y `preferred_username` **no sustituyen al subject** en esta consulta.
+`X-Dev-User` y el bypass `dev` no aportan un subject JWT y no permiten resolverla.
+El rol de base de datos del usuario vinculado no impone una restricción adicional;
+los roles anteriores son los del JWT solicitante.
+
+### Aprovisionar un enlace faltante
+
+1. Un ADMIN obtiene los UUID mediante `crearUsuario`/`listarUsuarios` y
+   `crearOdontologo`/`listarOdontologos`; ambos registros deben estar activos y sin enlaces previos.
+2. Confirma el subject exacto con el proveedor de identidad de confianza, sin deducirlo
+   del nombre o correo, y ejecuta `vincularIdentidadOdontologo` con esos tres valores.
+3. El titular consulta `obtenerMiOdontologoId` con su JWT ODONTOLOGO/ADMIN.
+   MS2/MS3 conservan ese UUID para referencias clínicas/de agenda y eventos.
+
+Un enlace nuevo genera una auditoría `IDENTIDAD_ODONTOLOGO_VINCULADA`, sin evento de catálogo.
+Repetir los tres valores **ya completamente consistentes** devuelve el mismo UUID sin
+escrituras ni otra auditoría. Cambiar subject, usuario u odontólogo de un enlace existente,
+apropiarse del enlace de otro usuario o completar parcialmente un enlace legado se rechaza:
+no hay reparación ni reasignación pública automática. Escalar estos casos al operador;
+no borrar enlaces ni sustituir UUID para sortear el rechazo. Las actualizaciones y bajas
+ordinarias conservan los enlaces; una baja impide la consulta propia.
+
+| Fallo | Clasificación GraphQL / respuesta |
+|---|---|
+| JWT ausente, firma/issuer/vigencia/audiencia inválidos | HTTP 401 antes de ejecutar la operación |
+| Rol insuficiente | `FORBIDDEN`, manejo de autorización existente |
+| Consulta propia sin subject JWT o con subject en blanco | `FORBIDDEN`: `Se requiere un JWT con subject` |
+| Consulta propia: usuario, enlace u odontólogo faltante/inactivo | `NOT_FOUND`: `Identidad odontológica no disponible` |
+| Aprovisionamiento: UUID inexistente | `NOT_FOUND`: `Usuario no encontrado` / `Odontólogo no encontrado` |
+| Aprovisionamiento: registro inactivo | `BAD_REQUEST`: `El usuario está inactivo` / `El odontólogo está inactivo` |
+| Subject vacío, en blanco o mayor de 100 caracteres | `BAD_REQUEST`: `El subject de Keycloak debe tener entre 1 y 100 caracteres y no estar en blanco` |
+| Enlace previo, parcial o conflictivo | `BAD_REQUEST`: `La identidad odontológica ya está vinculada` |
+| Conflicto concurrente de unicidad | `BAD_REQUEST`: `El registro viola una restricción de unicidad o integridad` |
+
+Los errores GraphQL usan HTTP 200 con `errors`; los rechazos no modifican enlaces ni auditoría.
+Bloqueos en orden usuario→odontólogo y restricciones únicas existentes resuelven reclamaciones
+concurrentes sin migraciones. La política de audience es un trabajo separado, no parte de este enlace.
 
 ## RabbitMQ: sincronización y consulta finalizada
 
