@@ -104,6 +104,21 @@ public class OrdenCobro {
         this.estado = EstadoOrdenCobro.ANULADO;
     }
 
+    /** Change one pending due date without replacing IDs, other quotas, payment snapshots or balances. */
+    public CuotaPago reprogramarCuota(UUID cuotaId, LocalDate vencimiento) {
+        if (vencimiento == null || estado == EstadoOrdenCobro.ANULADO) {
+            throw new BusinessRuleException("La cuota requiere fecha y una orden vigente");
+        }
+        var cuota = cuotas.stream().filter(c -> c.id().equals(cuotaId)).findFirst()
+                .orElseThrow(() -> new BusinessRuleException("La cuota no pertenece a la orden"));
+        if (cuota.estado() != EstadoCuota.PENDIENTE) {
+            throw new BusinessRuleException("Solo se puede reprogramar una cuota pendiente; no una pagada");
+        }
+        var changed = new CuotaPago(cuota.id(), cuota.numeroCuota(), cuota.montoCuota(), vencimiento, cuota.estado(), cuota.fechaPago());
+        cuotas = cuotas.stream().map(c -> c.id().equals(cuotaId) ? changed : c).toList();
+        return changed;
+    }
+
     public CuotaPago registrarPagoCuota(UUID cuotaId, OffsetDateTime fechaPago) {
         if (estado == EstadoOrdenCobro.ANULADO) {
             throw new BusinessRuleException("No se puede cobrar una orden anulada");

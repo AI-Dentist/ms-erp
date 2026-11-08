@@ -56,12 +56,15 @@ public class ErpMcpToolsService {
     private final AgentActorResolver actor;
     private final AgentToolTrace trace;
     private final Clock clock;
+    private final com.dentalplatform.erp.financebilling.application.usecase.ReprogramarCuotaPlanPagoUseCase rescheduleQuota;
 
     public ErpMcpToolsService(MonitoreoNegocioUseCase monitoring, ConsultarFinanzasUseCase finances,
                               CrearServicioOdontologicoUseCase createService, RegistrarEgresoCajaUseCase expense,
                               ReprogramarPlanPagosUseCase reschedule, AnularOrdenCobroUseCase annul,
                               GenerarReporteDinamicoSqlService reports, DispararAlertaCobranzaUseCase collections,
-                              AgentActorResolver actor, AgentToolTrace trace, Clock clock) {
+                              AgentActorResolver actor, AgentToolTrace trace, Clock clock,
+                              com.dentalplatform.erp.financebilling.application.usecase.ReprogramarCuotaPlanPagoUseCase rescheduleQuota) {
+        this.rescheduleQuota = rescheduleQuota;
         this.monitoring = monitoring;
         this.finances = finances;
         this.createService = createService;
@@ -202,7 +205,7 @@ public class ErpMcpToolsService {
     @Tool(description = "Genera un reporte a partir de una solicitud en lenguaje natural: traduce a un SELECT de "
             + "PostgreSQL sobre las vistas de reportes aprobadas (ingresos, órdenes por estado, precios de servicios), "
             + "lo valida como solo lectura y lo ejecuta. Devuelve columnas, una muestra de filas, el gráfico sugerido "
-            + "(BARRAS, LINEAS, TORTA o TABLA) y los enlaces de descarga Excel/PDF. Solo ADMIN.")
+            + "(BARRAS, LINEAS o TORTA) y los enlaces de descarga Excel/PDF. Solo ADMIN.")
     @ToolCategory(ToolCategory.REPORTE)
     @PreAuthorize(ADMIN)
     public ReporteTool generarReporteDinamicoSqlTool(
@@ -233,6 +236,88 @@ public class ErpMcpToolsService {
         return new AlertaCobranzaTool(result.notificacionEnviada(), result.enviados(), result.omitidosPorDuplicado(),
                 result.fallidos(), result.noElegibles(), result.motivo());
     }
+
+    @Tool(description = "Crea un arancel con código, nombre, categoría y precio en Bs. Solo ADMIN, por pedido explícito.")
+    @ToolCategory(ToolCategory.ACCION_CRUD)
+    @PreAuthorize(ADMIN)
+    public ServicioCreadoTool crearServicioArancel(String codigo, String nombre, String categoria, BigDecimal precioBs) {
+        money(precioBs, false);
+        if (categoria == null || categoria.isBlank()) { throw new BusinessRuleException("La categoría es obligatoria"); }
+        var service = createService.ejecutar(new CrearServicioOdontologicoCommand(null, codigo, nombre, null, precioBs, categoria));
+        trace.executed("crearServicioArancel");
+        trace.crud("crearServicioArancel", service.getId());
+        return new ServicioCreadoTool(service.getId(), service.getCodigo(), service.getNombre(), service.getPrecioBase().amount());
+    }
+
+    @Tool(description = "Registra egreso EFECTIVO validado: monto Bs, categoría contable y glosa; actor autenticado, ADMIN/CAJERO.")
+    @ToolCategory(ToolCategory.ACCION_CRUD)
+    @PreAuthorize(CASH)
+    public EgresoRegistradoTool registrarEgresoCaja(BigDecimal montoBs, String categoria, String glosa) {
+        money(montoBs, true);
+        return registrarEgresoCajaTool(montoBs, categoria, glosa, "EFECTIVO");
+    }
+
+    @Tool(description = "Reprograma solo una cuota pendiente a nuevaFechaVencimiento AAAA-MM-DD; rechaza cuotas pagadas. No cambia importes ni otras cuotas.")
+    @ToolCategory(ToolCategory.ACCION_CRUD)
+    @PreAuthorize(READ_OR_PLAN)
+    public CuotaReprogramadaTool reprogramarCuotaPlanPago(String cuotaId, String nuevaFechaVencimiento) {
+        var quota = rescheduleQuota.ejecutar(uuid(cuotaId, "cuotaId"), date(nuevaFechaVencimiento));
+        trace.executed("reprogramarCuotaPlanPago");
+        trace.crud("reprogramarCuotaPlanPago", quota.id());
+        return new CuotaReprogramadaTool(quota.id(), quota.fechaVencimiento(), quota.estado().name());
+    }
+
+    @Tool(description = "Monitorea mi negocio: diagnóstico ejecutivo de morosidad, caja de hoy y egresos inusuales (>2x media de 30 días previos). Solo lectura.")
+    @ToolCategory(ToolCategory.MONITOREO)
+    @PreAuthorize(CASH)
+    public SaludNegocioTool auditarSaludNegocio() {
+        var today = LocalDate.now(clock);
+        var zone = clock.getZone();
+        var start = today.atStartOfDay(zone).toOffsetDateTime();
+        var flow = finances.obtenerFlujoCaja(start, today.atTime(LocalTime.MAX).atZone(zone).toOffsetDateTime());
+        var historical = finances.obtenerFlujoCaja(today.minusDays(30).atStartOfDay(zone).toOffsetDateTime(), start.minusNanos(1))
+                .movimientos().stream().filter(m -> m.tipoMovimiento() == com.dentalplatform.erp.financebilling.domain.model.TipoMovimientoCaja.EGRESO).toList();
+        BigDecimal twiceSum = historical.stream().map(m -> m.monto().amount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add).multiply(BigDecimal.TWO);
+        BigDecimal threshold = historical.isEmpty() ? null : twiceSum
+                .divide(BigDecimal.valueOf(historical.size()), 2, java.math.RoundingMode.HALF_UP);
+        var unusual = flow.movimientos().stream().filter(m -> threshold != null
+                && m.tipoMovimiento() == com.dentalplatform.erp.financebilling.domain.model.TipoMovimientoCaja.EGRESO
+                // Compare without rounding the mean; the two-decimal threshold is display-only.
+                && m.monto().amount().multiply(BigDecimal.valueOf(historical.size())).compareTo(twiceSum) > 0).map(m -> new EgresoInusualTool(m.id(), m.monto().amount())).toList();
+        var overdue = monitoring.cuotasVencidas(today);
+        List<String> actions = new ArrayList<>();
+        if (!overdue.isEmpty()) { actions.add("Revisar cuotas vencidas y proponer recordatorios de cobranza autorizados."); }
+        if (!unusual.isEmpty()) { actions.add("Revisar comprobantes de los egresos inusuales; no se ejecutó ninguna corrección."); }
+        if (flow.saldoNetoBs().signum() < 0) { actions.add("Revisar liquidez: el flujo neto de hoy es negativo."); }
+        if (actions.isEmpty()) { actions.add("Continuar monitoreo diario; no se detectaron alertas con estos datos."); }
+        String diagnosis = "Cuotas vencidas: " + overdue.size() + ". Flujo de caja hoy: Bs " + flow.saldoNetoBs()
+                + ". Egresos inusuales: " + unusual.size() + (threshold == null ? ". Sin histórico previo para evaluar anomalías."
+                : ". Umbral: Bs " + threshold + " (2x promedio de egresos de los 30 días anteriores).");
+        trace.executed("auditarSaludNegocio");
+        return new SaludNegocioTool(diagnosis, overdue.size(), new FlujoCajaTool(today, today, flow.totalIngresosBs(),
+                flow.totalEgresosBs(), flow.saldoNetoBs(), flow.movimientos().size()), threshold, historical.size(), unusual, List.copyOf(actions));
+    }
+
+    @Tool(description = "Envía recordatorios WhatsApp por n8n de cuotas vencidas; devuelve explícitamente no enviado ante caída o integración deshabilitada.")
+    @ToolCategory(ToolCategory.COBRANZA)
+    @PreAuthorize(CASH)
+    public AlertaCobranzaTool dispararAlertaCobranzaWhatsapp(@ToolParam(required = false) List<String> cuotaIds) {
+        return dispararAlertaCobranzaN8nTool(cuotaIds);
+    }
+
+    private static void money(BigDecimal amount, boolean positive) {
+        if (amount == null || amount.signum() < 0 || (positive && amount.signum() == 0)
+                || amount.stripTrailingZeros().scale() > 2 || amount.compareTo(new BigDecimal("9999999999.99")) > 0) {
+            throw new BusinessRuleException("Importe Bs inválido: hasta 2 decimales y máximo 9999999999.99");
+        }
+    }
+
+    public record CuotaReprogramadaTool(UUID cuotaId, LocalDate fechaVencimiento, String estado) { }
+    public record EgresoInusualTool(UUID movimientoId, BigDecimal montoBs) { }
+    public record SaludNegocioTool(String diagnostico, int cuotasVencidas, FlujoCajaTool flujoCajaHoy,
+                                  BigDecimal umbralEgresoInusualBs, int egresosHistoricos, List<EgresoInusualTool> egresosInusuales,
+                                  List<String> accionesRecomendadas) { }
 
     // ---- helpers ------------------------------------------------------------------------------------------------
 

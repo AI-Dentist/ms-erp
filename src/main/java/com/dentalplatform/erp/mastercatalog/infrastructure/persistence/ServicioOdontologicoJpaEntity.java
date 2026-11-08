@@ -31,6 +31,9 @@ public class ServicioOdontologicoJpaEntity {
 
     private String descripcion;
 
+    @Column(length = 100)
+    private String categoria;
+
     @Column(name = "precio_base_bs", nullable = false, precision = 12, scale = 2)
     private BigDecimal precioBaseBs;
 
@@ -45,7 +48,14 @@ public class ServicioOdontologicoJpaEntity {
     public ServicioOdontologicoJpaEntity(UUID id, EspecialidadJpaEntity especialidad, String codigo, String nombre,
                                          String descripcion, BigDecimal precioBaseBs, boolean activo,
                                          OffsetDateTime createdAt) {
+        this(id, especialidad, codigo, nombre, descripcion, precioBaseBs, activo, createdAt, null);
+    }
+
+    public ServicioOdontologicoJpaEntity(UUID id, EspecialidadJpaEntity especialidad, String codigo, String nombre,
+                                         String descripcion, BigDecimal precioBaseBs, boolean activo,
+                                         OffsetDateTime createdAt, String categoria) {
         this.id = id;
+        this.categoria = categoria;
         this.especialidad = especialidad;
         this.codigo = codigo;
         this.nombre = nombre;
@@ -54,6 +64,8 @@ public class ServicioOdontologicoJpaEntity {
         this.activo = activo;
         this.createdAt = createdAt;
     }
+
+    public String getCategoria() { return categoria; }
 
     public UUID getId() {
         return id;

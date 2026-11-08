@@ -123,13 +123,15 @@ class AgentAutonomousN8nTest extends IntegrationTestBase {
         int services = count(jdbc, "servicios_odontologicos"), movements = count(jdbc, "movimientos_caja");
         var response = autonomous("Monitorea mi negocio");
         response.path("ejecutarAgenteErp.toolsMcpInvocadas").entityList(String.class).containsExactly(
-                        "obtenerResumenFinancieroTool", "listarPacientesConCuotasVencidasTool", "dispararAlertaCobranzaN8nTool")
+                        "obtenerResumenFinancieroTool", "listarPacientesConCuotasVencidasTool", "auditarSaludNegocio", "dispararAlertaCobranzaN8nTool")
                 .path("ejecutarAgenteErp.notificacionN8nEnviada").entity(Boolean.class).isEqualTo(true)
                 .path("ejecutarAgenteErp.accionCrudEjecutada").valueIsNull()
                 .path("ejecutarAgenteErp.respuestaNaturalAgente").entity(String.class)
                 .matches(t -> t.startsWith(LABEL) && t.contains("Resumen financiero") && t.contains("Recordatorios de cobranza por n8n"));
         String id = response.path("ejecutarAgenteErp.interaccionId").entity(String.class).get();
 
+        response.path("ejecutarAgenteErp.respuestaNaturalAgente").entity(String.class)
+                .matches(t -> t.contains("Egresos inusuales:") && t.contains("Acciones recomendadas:"));
         assertThat(mine()).hasSize(1);
         JsonNode payload = mine().getFirst();
         assertThat(payload.path("event").asString()).isEqualTo("cobranza.recordatorio");

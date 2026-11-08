@@ -15,12 +15,22 @@ public class ServicioOdontologico {
     private final String nombre;
     private final String descripcion;
     private final Money precioBase;
+    private final String categoria;
     private final boolean activo;
     private final OffsetDateTime createdAt;
 
     public ServicioOdontologico(UUID id, Especialidad especialidad, String codigo, String nombre, String descripcion,
                                 Money precioBase, boolean activo, OffsetDateTime createdAt) {
+        this(id, especialidad, codigo, nombre, descripcion, precioBase, activo, createdAt, null);
+    }
+
+    public ServicioOdontologico(UUID id, Especialidad especialidad, String codigo, String nombre, String descripcion,
+                                Money precioBase, boolean activo, OffsetDateTime createdAt, String categoria) {
         this.id = id;
+        if (categoria != null && (categoria.isBlank() || categoria.strip().length() > 100)) {
+            throw new BusinessRuleException("La categoría debe tener entre 1 y 100 caracteres");
+        }
+        this.categoria = categoria == null ? null : categoria.strip();
         this.especialidad = especialidad;
         this.codigo = codigo;
         this.nombre = nombre;
@@ -38,11 +48,11 @@ public class ServicioOdontologico {
     /** Replaces the editable fields. Existing charge-order items keep their own price snapshot. */
     public ServicioOdontologico actualizar(Especialidad especialidad, String codigo, String nombre,
                                            String descripcion, BigDecimal precioBaseBs) {
-        return construir(id, especialidad, codigo, nombre, descripcion, precioBaseBs, activo, createdAt);
+        return construir(id, especialidad, codigo, nombre, descripcion, precioBaseBs, activo, createdAt).conCategoria(categoria);
     }
 
     public ServicioOdontologico desactivar() {
-        return new ServicioOdontologico(id, especialidad, codigo, nombre, descripcion, precioBase, false, createdAt);
+        return new ServicioOdontologico(id, especialidad, codigo, nombre, descripcion, precioBase, false, createdAt, categoria);
     }
 
     private static ServicioOdontologico construir(UUID id, Especialidad especialidad, String codigo, String nombre,
@@ -57,6 +67,12 @@ public class ServicioOdontologico {
         return new ServicioOdontologico(id, especialidad, Validaciones.codigo(codigo, "codigo"),
                 Validaciones.requerido(nombre, "nombre"), Validaciones.opcional(descripcion),
                 Money.of(precioBaseBs), activo, createdAt);
+    }
+
+    public String getCategoria() { return categoria; }
+
+    public ServicioOdontologico conCategoria(String value) {
+        return new ServicioOdontologico(id, especialidad, codigo, nombre, descripcion, precioBase, activo, createdAt, value);
     }
 
     public UUID getId() {

@@ -85,7 +85,7 @@ class AgentGuardrailAndAvailabilityTest extends IntegrationTestBase {
 
     @Test
     @WithMockUser(username = "mcp-admin", roles = "ADMIN")
-    void mcpStatusListsTheNineRegisteredToolsWithCategoriesFromTheLiveServer() {
+    void mcpStatusListsLegacyAndCanonicalToolsWithCategoriesFromTheLiveServer() {
         var tools = graphQl.document("{ obtenerEstadoServidorMcp { activo protocolVersion toolsRegistradas { nombre categoria descripcion } } }")
                 .execute().path("obtenerEstadoServidorMcp.activo").entity(Boolean.class).isEqualTo(true)
                 .path("obtenerEstadoServidorMcp.protocolVersion").entity(String.class).matches(v -> v.matches("\\d{4}-\\d{2}-\\d{2}"))
@@ -93,10 +93,11 @@ class AgentGuardrailAndAvailabilityTest extends IntegrationTestBase {
         assertThat(tools).extracting(t -> t.get("nombre")).containsExactlyInAnyOrder("obtenerResumenFinancieroTool",
                 "listarPacientesConCuotasVencidasTool", "obtenerFlujoCajaTool", "crearServicioOdontologicoTool",
                 "registrarEgresoCajaTool", "reprogramarPlanPagosOAnularDescuentoTool", "anularOrdenCobroPendienteTool",
-                "generarReporteDinamicoSqlTool", "dispararAlertaCobranzaN8nTool");
+                "generarReporteDinamicoSqlTool", "dispararAlertaCobranzaN8nTool", "crearServicioArancel",
+                "registrarEgresoCaja", "reprogramarCuotaPlanPago", "auditarSaludNegocio", "dispararAlertaCobranzaWhatsapp");
         assertThat(tools).extracting(t -> t.get("categoria")).containsOnly("MONITOREO", "ACCION_CRUD", "REPORTE", "COBRANZA");
         assertThat(tools).allSatisfy(t -> assertThat((String) t.get("descripcion")).isNotBlank());
-        assertThat(tools.stream().filter(t -> "ACCION_CRUD".equals(t.get("categoria"))).count()).isEqualTo(4);
+        assertThat(tools.stream().filter(t -> "ACCION_CRUD".equals(t.get("categoria"))).count()).isEqualTo(7);
     }
 
     @Test

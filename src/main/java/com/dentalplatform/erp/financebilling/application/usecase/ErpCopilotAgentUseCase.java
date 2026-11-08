@@ -60,7 +60,8 @@ public class ErpCopilotAgentUseCase {
     private static final Set<String> ALL_TOOLS = Set.of("obtenerResumenFinancieroTool",
             "listarPacientesConCuotasVencidasTool", "obtenerFlujoCajaTool", "crearServicioOdontologicoTool",
             "registrarEgresoCajaTool", "reprogramarPlanPagosOAnularDescuentoTool", "anularOrdenCobroPendienteTool",
-            "generarReporteDinamicoSqlTool", "dispararAlertaCobranzaN8nTool");
+            "generarReporteDinamicoSqlTool", "dispararAlertaCobranzaN8nTool", "crearServicioArancel",
+            "registrarEgresoCaja", "reprogramarCuotaPlanPago", "auditarSaludNegocio", "dispararAlertaCobranzaWhatsapp");
 
     private final PromptInjectionGuardrail guardrail = new PromptInjectionGuardrail();
     private final AgentProvider provider;
@@ -149,10 +150,11 @@ public class ErpCopilotAgentUseCase {
         String refusal = DeterministicAgentPlanner.pideEscritura(instruction) ? AUTONOMOUS_REFUSAL + "\n" : "";
         var summary = tools.obtenerResumenFinancieroTool(null, null);
         var overdue = tools.listarPacientesConCuotasVencidasTool(null);
+        var health = tools.auditarSaludNegocio();
         ErpMcpToolsService.AlertaCobranzaTool alert = null;
         if (overdue.totalCuotasVencidas() > 0 && n8n.habilitado()) { alert = tools.dispararAlertaCobranzaN8nTool(null); }
         if (mode == AgentProvider.Modo.IA) {
-            var data = new LinkedHashDataBlock(summary, overdue, alert);
+            var data = new LinkedHashDataBlock(summary, overdue, alert, health);
             try {
                 return refusal + model.responder(AUTONOMOUS_PROMPT, "<datos>" + json.writeValueAsString(data) + "</datos>", Set.of());
             } catch (RuntimeException e) {
@@ -160,7 +162,9 @@ public class ErpCopilotAgentUseCase {
                 throw new BusinessRuleException("El proveedor de IA no está disponible en este momento");
             }
         }
-        return refusal + planner.resumen(summary) + "\n" + planner.vencidas(overdue) + (alert == null ? ""
+        return refusal + planner.resumen(summary) + "\n" + planner.vencidas(overdue)
+                + "\n" + health.diagnostico() + "\nAcciones recomendadas: " + String.join(" ", health.accionesRecomendadas())
+                + (alert == null ? ""
                 : "\nRecordatorios de cobranza por n8n: " + alert.enviados() + " enviado(s), "
                 + alert.omitidosPorDuplicado() + " omitido(s) por duplicado en 24 h"
                 + (alert.motivo() == null ? "." : " (" + alert.motivo() + ")."));
@@ -168,7 +172,8 @@ public class ErpCopilotAgentUseCase {
 
     private record LinkedHashDataBlock(ErpMcpToolsService.ResumenFinancieroTool resumen,
                                        ErpMcpToolsService.CuotasVencidasTool cuotasVencidas,
-                                       ErpMcpToolsService.AlertaCobranzaTool recordatorios) { }
+                                       ErpMcpToolsService.AlertaCobranzaTool recordatorios,
+                                       ErpMcpToolsService.SaludNegocioTool saludNegocio) { }
 
     private AgenteInteraccion persist(String instruction, String answer, AgentToolTrace.Run run, String mode) {
         return history.guardar(new AgenteInteraccion(UUID.randomUUID(), actor.usuarioId().orElse(null),

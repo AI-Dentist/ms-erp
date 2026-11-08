@@ -37,7 +37,7 @@ public class CrearServicioOdontologicoUseCase {
                 : especialidades.buscarPorId(command.especialidadId()).orElseThrow(() -> new BusinessRuleException(
                         "No existe la especialidad " + command.especialidadId()));
         ServicioOdontologico nuevo = ServicioOdontologico.crear(especialidad, command.codigo(), command.nombre(),
-                command.descripcion(), command.precioBaseBs(), OffsetDateTime.now(clock));
+                command.descripcion(), command.precioBaseBs(), OffsetDateTime.now(clock)).conCategoria(command.categoria());
         if (servicios.existeCodigo(nuevo.getCodigo())) {
             throw new BusinessRuleException("Ya existe un servicio con el código " + nuevo.getCodigo());
         }

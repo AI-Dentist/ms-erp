@@ -54,13 +54,13 @@ class ServicioOdontologicoRepositoryAdapter implements ServicioOdontologicoRepos
         EspecialidadJpaEntity especialidad = s.getEspecialidad() == null ? null
                 : especialidades.getReferenceById(s.getEspecialidad().getId());
         return toDomain(repository.save(new ServicioOdontologicoJpaEntity(s.getId(), especialidad, s.getCodigo(),
-                s.getNombre(), s.getDescripcion(), s.getPrecioBase().amount(), s.isActivo(), s.getCreatedAt())));
+                s.getNombre(), s.getDescripcion(), s.getPrecioBase().amount(), s.isActivo(), s.getCreatedAt(), s.getCategoria())));
     }
 
     private static ServicioOdontologico toDomain(ServicioOdontologicoJpaEntity e) {
         return new ServicioOdontologico(e.getId(),
                 e.getEspecialidad() == null ? null : EspecialidadRepositoryAdapter.toDomain(e.getEspecialidad()),
                 e.getCodigo(), e.getNombre(), e.getDescripcion(), Money.of(e.getPrecioBaseBs()), e.isActivo(),
-                e.getCreatedAt());
+                e.getCreatedAt(), e.getCategoria());
     }
 }

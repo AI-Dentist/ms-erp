@@ -62,11 +62,11 @@ docker compose up -d
 
 ## Co-Piloto ERP, MCP y reportes
 
-El único punto de entrada de IA es `ejecutarAgenteErp`. El agente usa las mismas nueve herramientas que el servidor MCP autenticado en `/mcp` (Streamable HTTP). Cada herramienta aplica los roles del ERP con la identidad del solicitante; el modelo nunca obtiene permisos adicionales.
+El único punto de entrada de IA es `ejecutarAgenteErp`. El agente usa las mismas catorce herramientas (nueve legacy y cinco nombres canónicos aditivos) que el servidor MCP autenticado en `/mcp` (Streamable HTTP). Cada herramienta aplica los roles del ERP con la identidad del solicitante; el modelo nunca obtiene permisos adicionales.
 
 | Capacidad | Herramientas |
 |---|---|
-| Monitoreo | Resumen financiero, cuotas vencidas y flujo de caja |
+| Monitoreo | Resumen financiero, cuotas vencidas, flujo de caja y diagnóstico ejecutivo con egresos inusuales |
 | CRUD por casos de uso | Crear servicio, registrar egreso, reprogramar plan/anular descuento, anular orden pendiente |
 | Reportes ADMIN | SELECT protegido, caché privada y descargas PDF/XLSX |
 | Cobranza ADMIN/CAJERO | Recordatorios n8n, máximo 20 por llamada, deduplicación de cuota durante 24 h |
@@ -90,7 +90,7 @@ mutation {
 
 Otros ejemplos de respaldo: `resumen financiero`, `cuotas vencidas`, `flujo de caja`, `crear servicio codigo=LIM-TEST nombre="Limpieza" precio=150`, `registrar egreso monto=80 categoria=INSUMOS descripcion="Guantes"`, `anular orden <uuid> motivo="Error"`, `reprogramar <uuid> cuotas=3 primera=2026-12-01 intervalo=30` y `anular descuento <uuid>`. Son reglas acotadas: una instrucción no reconocida devuelve ayuda, no datos inventados. Una instrucción de escritura con negación se rechaza sin ejecutar herramientas. Los valores explícitos inválidos no se sustituyen por defaults; la descripción indicada al crear un servicio se conserva.
 
-`modoAutonomoMonitoreo: true` consulta resumen y morosidad; puede enviar recordatorios si n8n está habilitado, pero **nunca ejecuta CRUD**. `PromptInjectionGuardrail` bloquea instrucciones maliciosas antes del procesamiento; es defensa adicional, no reemplaza autorización. `listarHistorialAgente(limite: 20)` admite 1–100: ADMIN ve todas las interacciones; los demás, solo las propias. El historial almacena instrucciones/respuestas: no incluya secretos ni datos personales innecesarios.
+`modoAutonomoMonitoreo: true` consulta resumen, morosidad y diagnóstico de salud del negocio (caja de hoy, umbral de egresos y recomendaciones); puede enviar recordatorios si n8n está habilitado, pero **nunca ejecuta CRUD**. `PromptInjectionGuardrail` bloquea instrucciones maliciosas antes del procesamiento; es defensa adicional, no reemplaza autorización. `listarHistorialAgente(limite: 20)` admite 1–100: ADMIN ve todas las interacciones; los demás, solo las propias. El historial almacena instrucciones/respuestas: no incluya secretos ni datos personales innecesarios.
 
 ### Reportes y descargas
 

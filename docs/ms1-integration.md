@@ -467,7 +467,7 @@ no se transfieren al comando financiero como claves de deduplicación.
 ## MCP, REST e idempotencia
 
 `/mcp` es un servidor MCP real Spring AI, Streamable HTTP/WebMVC, no REST de negocio.
-Exige autenticación; las nueve herramientas operan con la identidad del solicitante:
+Exige autenticación; las catorce herramientas (nueve legacy y cinco canónicas aditivas) operan con la identidad del solicitante:
 
 | Grupo | Herramientas exactas | Roles |
 |---|---|---|
@@ -478,6 +478,12 @@ Exige autenticación; las nueve herramientas operan con la identidad del solicit
 | Plan / descuento | `reprogramarPlanPagosOAnularDescuentoTool` | PLAN |
 | Reportes SELECT protegidos | `generarReporteDinamicoSqlTool` | ADMIN |
 | Cobranza n8n | `dispararAlertaCobranzaN8nTool` | CAJA |
+| Arancel canónico | `crearServicioArancel` | ADMIN |
+| Egreso / salud canónicos | `registrarEgresoCaja`, `auditarSaludNegocio` | CAJA |
+| Cuota individual | `reprogramarCuotaPlanPago` | PLAN |
+| WhatsApp canónico | `dispararAlertaCobranzaWhatsapp` | CAJA |
+
+Parámetros, categoría persistida, diagnóstico y secret n8n fail-closed: [extensión IA/MCP/reportes](ai-ml-mcp-reports.md).
 
 El agente usa estas mismas herramientas. Modo autónomo: monitoreo y posible aviso de
 cobranza, **nunca CRUD autónomo**. Las escrituras pasan por casos de uso transaccionales
