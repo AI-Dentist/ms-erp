@@ -111,6 +111,7 @@ erp:
   n8n:
     enabled: ${N8N_ENABLED:false}
     webhook-url: ${N8N_WEBHOOK_URL:http://localhost:5678/webhook/erp-recibo-emitido}
+    webhook-secret: ${N8N_WEBHOOK_SECRET:}
     connect-timeout-ms: 1000
     read-timeout-ms: 2000
   receipts:

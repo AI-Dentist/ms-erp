@@ -57,6 +57,7 @@ class N8nTimeoutIntegrationTest extends IntegrationTestBase {
 
     @DynamicPropertySource static void properties(DynamicPropertyRegistry r) {
         r.add("erp.n8n.enabled", () -> true);
+        r.add("erp.n8n.webhook-secret", () -> "synthetic-test-secret");
         r.add("erp.n8n.webhook-url", N8nTimeoutIntegrationTest::url);
         r.add("erp.n8n.connect-timeout-ms", () -> 200);
         r.add("erp.n8n.read-timeout-ms", () -> 300);

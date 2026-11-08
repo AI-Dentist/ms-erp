@@ -64,6 +64,7 @@ class AgentAutonomousN8nTest extends IntegrationTestBase {
             var http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             http.createContext("/n8n", exchange -> {
                 received.add(JSON.readTree(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
+                if (status.get() == 0) { exchange.close(); return; }
                 exchange.sendResponseHeaders(status.get(), -1);
                 exchange.close();
             });
@@ -75,6 +76,7 @@ class AgentAutonomousN8nTest extends IntegrationTestBase {
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("erp.n8n.enabled", () -> "true");
+        registry.add("erp.n8n.webhook-secret", () -> "synthetic-test-secret");
         registry.add("erp.n8n.webhook-url", () -> "http://127.0.0.1:" + server.getAddress().getPort() + "/n8n");
         AgentSupport.reportingProperties(registry);
     }
@@ -200,6 +202,19 @@ class AgentAutonomousN8nTest extends IntegrationTestBase {
                 .path("ejecutarAgenteErp.notificacionN8nEnviada").entity(Boolean.class).isEqualTo(true);
         assertThat(mine()).hasSize(2);
         assertThat(ledgerRows()).isEqualTo(1);
+    }
+
+    @Test
+    void disconnectedWebhookNeverThrowsToTheAgentOrClaimsDelivery() {
+        status.set(0); // A peer that drops the connection without a response, not merely an HTTP error.
+        var response = graphQl.document(EXECUTE).variable("i", "Enviar recordatorio de cobranza " + quota).execute();
+        response.errors().verify();
+        response.path("ejecutarAgenteErp.notificacionN8nEnviada").entity(Boolean.class).isEqualTo(false)
+                .path("ejecutarAgenteErp.respuestaNaturalAgente").entity(String.class)
+                .matches(t -> t.contains("No se envió ningún recordatorio") && t.contains("n8n no aceptó"));
+        assertThat(ledgerRows()).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_logs WHERE accion = 'COBRANZA_RECORDATORIO_ENVIADO' AND entidad_id = ?",
+                Integer.class, quota)).isZero();
     }
 
     @Test

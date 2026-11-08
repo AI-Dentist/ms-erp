@@ -61,6 +61,7 @@ class N8nPaymentIntegrationTest extends IntegrationTestBase {
     @DynamicPropertySource
     static void notificationProperties(DynamicPropertyRegistry registry) {
         registry.add("erp.n8n.enabled", () -> "true");
+        registry.add("erp.n8n.webhook-secret", () -> "synthetic-test-secret");
         registry.add("erp.pagofacil.webhook-secret", () -> "n8n-local-test-secret");
         registry.add("erp.n8n.webhook-url", () -> "http://127.0.0.1:" + server.getAddress().getPort() + "/notify");
     }
