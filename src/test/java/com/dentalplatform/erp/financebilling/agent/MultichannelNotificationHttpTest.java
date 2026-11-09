@@ -193,10 +193,57 @@ class MultichannelNotificationHttpTest {
         assertThat(response.has("error") || response.path("result").path("isError").asBoolean()).isTrue();
         assertThat(bodies).isEmpty();
     }
+    @Test void notificationWordsInsideLegacyCrudDataNeverTriggerNotifications() throws Exception {
+        String code = "T10-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
+        String instruction = "Crear servicio codigo=" + code + " nombre=\"Notificar WhatsApp\" precio=1";
+        var response = request(admin, null, "/graphql", Map.of("query",
+                "mutation($i:String!){ ejecutarAgenteErp(instruccion:$i){ toolsMcpInvocadas accionCrudEjecutada notificacionMulticanal { exito } } }",
+                "variables", Map.of("i", instruction)));
+        assertThat(response.statusCode()).isEqualTo(200);
+        var json = JSON.readTree(response.body()); assertThat(json.has("errors")).as(json.toString()).isFalse();
+        var agent = json.path("data").path("ejecutarAgenteErp");
+        assertThat(agent.path("toolsMcpInvocadas").toString()).contains("crearServicioOdontologicoTool");
+        assertThat(agent.path("notificacionMulticanal").isNull()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT nombre FROM servicios_odontologicos WHERE codigo = ?", String.class, code)).isEqualTo("Notificar WhatsApp");
+        assertThat(bodies).isEmpty();
+    }
+
     @Test void explicitNullChannelsDefaultsToAll() throws Exception {
         var args = arguments(); args.put("canales", null); args.put("email", null); args.put("telegramChatId", null);
         results(call("dispararNotificacionMulticanal", args), "N8N_LIVE", "ENVIADO", List.of("WHATSAPP","TELEGRAM","GMAIL"));
     }
 
+    @Test void explicitPlannerDataIsNotReplacedByDemoAndNegatedRequestsNeverSend() throws Exception {
+        String query = "mutation($i:String!){ ejecutarAgenteErp(instruccion:$i){ respuestaNaturalAgente notificacionMulticanal { exito modoEjecucion } } }";
+        String instruction = "Notificar multicanal pacienteNombre=\"No debería\" telefono=+59170012345 montoBs=1.25 concepto=\"Synthetic concept\" fechaVencimiento=2026-11-05 canales=GMAIL";
+        var explicit = JSON.readTree(request(admin, null, "/graphql", Map.of("query", query, "variables", Map.of("i", instruction))).body());
+        assertThat(explicit.has("errors")).as(explicit.toString()).isFalse();
+        assertThat(explicit.path("data").path("ejecutarAgenteErp").path("notificacionMulticanal").path("exito").asBoolean()).isTrue();
+        assertThat(bodies.getLast().path("destinatario").path("nombre").asString()).isEqualTo("No debería");
+        assertThat(bodies.getLast().path("datosFinancieros").path("monto").decimalValue()).isEqualByComparingTo("1.25");
+        int sent = bodies.size();
+        for (String refused : List.of("No notificar cobro pendiente por WhatsApp, Telegram y Gmail", "Notificar multicanal pacienteNombre=\"Incomplete\"")) {
+            var response = JSON.readTree(request(admin, null, "/graphql", Map.of("query", query, "variables", Map.of("i", refused))).body());
+            assertThat(response.has("errors")).as(response.toString()).isFalse();
+            assertThat(response.path("data").path("ejecutarAgenteErp").path("notificacionMulticanal").isNull()).isTrue();
+        }
+        assertThat(bodies.size()).isEqualTo(sent);
+    }
 
+    @Test void graphqlDemoExposesStructuredSimulationWithoutClaimingRealDelivery() throws Exception {
+        webhookStatus.set(0);
+        var response = request(admin, null, "/graphql", Map.of("query", """
+            mutation { ejecutarAgenteErp(instruccion:"Notificar cobro pendiente por WhatsApp, Telegram y Gmail") {
+              respuestaNaturalAgente toolsMcpInvocadas notificacionN8nEnviada
+              notificacionMulticanal { exito modoEjecucion resultadosPorCanal { canal proveedor estado destino } }
+            } }
+            """));
+        assertThat(response.statusCode()).isEqualTo(200); var json = JSON.readTree(response.body());
+        assertThat(json.has("errors")).as(json.toString()).isFalse();
+        var agent = json.path("data").path("ejecutarAgenteErp");
+        results(agent.path("notificacionMulticanal"), "SIMULADO_SIN_N8N", "SIMULADO_OK", List.of("WHATSAPP","TELEGRAM","GMAIL"));
+        assertThat(agent.path("notificacionN8nEnviada").asBoolean()).isFalse();
+        assertThat(agent.path("respuestaNaturalAgente").asString()).contains("Respaldo determinístico", "SIMULADO_SIN_N8N", "demostración");
+        assertThat(agent.path("toolsMcpInvocadas").toString()).contains("dispararNotificacionMulticanal");
+    }
 }

@@ -468,6 +468,7 @@ type RespuestaAgenteErp {
     accionCrudEjecutada: String
     notificacionN8nEnviada: Boolean!
     reporteGenerado: ReporteGenerativoPayload
+    notificacionMulticanal: NotificacionMulticanalPayload
 }
 
 type AgenteInteraccionResponse {
@@ -479,6 +480,20 @@ type AgenteInteraccionResponse {
     accionCrudEjecutada: String
     notificacionN8nEnviada: Boolean!
     reporteGenerado: ReporteGenerativoPayload
+    notificacionMulticanal: NotificacionMulticanalPayload
+}
+
+type NotificacionMulticanalPayload {
+    exito: Boolean!
+    modoEjecucion: String!
+    resultadosPorCanal: [ResultadoCanalNotificacion!]!
+}
+
+type ResultadoCanalNotificacion {
+    canal: String!
+    proveedor: String!
+    estado: String!
+    destino: String!
 }
 
 type ReporteGenerativoPayload {

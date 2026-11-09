@@ -483,6 +483,8 @@ Exige autenticación; las quince herramientas (nueve legacy, cinco canónicas in
 | Cuota individual | `reprogramarCuotaPlanPago` | PLAN |
 | Notificaciones canónicas | `dispararAlertaCobranzaWhatsapp`, `dispararNotificacionMulticanal` | CAJA |
 
+La ruta multicanal S17, con modos LIVE/SIMULADO/NO_ENVIADO y campo GraphQL aditivo, se describe en [notificaciones multicanal](multichannel-notifications.md). La variante legacy por cuotas conserva sus reglas y nunca inventa entregas.
+
 Parámetros, categoría persistida, diagnóstico y secret n8n fail-closed: [extensión IA/MCP/reportes](ai-ml-mcp-reports.md).
 
 El agente usa estas mismas herramientas. Modo autónomo: monitoreo y posible aviso de

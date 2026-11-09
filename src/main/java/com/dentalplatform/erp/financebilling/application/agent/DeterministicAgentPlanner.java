@@ -25,7 +25,9 @@ public class DeterministicAgentPlanner {
             + "de pago o día), «reporte de órdenes por estado», «reporte de precios de servicios»; «enviar recordatorios "
             + "de cobranza»; «crear servicio codigo=XYZ nombre=\"Limpieza\" precio=150»; «registrar egreso monto=80 "
             + "categoria=INSUMOS descripcion=\"Guantes\"»; «anular orden <uuid> motivo=...»; «anular descuento <uuid>»; "
-            + "«reprogramar <uuid> cuotas=3 primera=2026-12-01 intervalo=30».";
+            + "«reprogramar <uuid> cuotas=3 primera=2026-12-01 intervalo=30»; "
+            + "«Notificar cobro pendiente por WhatsApp, Telegram y Gmail» (demostración con datos sintéticos), "
+            + "o notificación multicanal con pacienteNombre=…, telefono=…, montoBs=…, concepto=…, fechaVencimiento=… y canales=TODOS.";
     private static final Pattern UUID_PATTERN =
             Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     private static final Pattern WRITE_VERB = Pattern.compile(
@@ -47,6 +49,7 @@ public class DeterministicAgentPlanner {
 
     public String planificar(String instruction) {
         String text = plain(instruction);
+        if (isMultichannelInstruction(instruction)) { return notificacionMulticanal(instruction); }
         boolean write = WRITE_VERB.matcher(text).find();
         // Named argument values are data, not instructions (e.g. nombre="No debería").
         Matcher firstArgument = Pattern.compile("\\b(?:codigo|nombre|precio|monto|categoria|descripcion|metodo|motivo|cuotas|primera|intervalo|descuento)\\s*[:=]").matcher(text);
@@ -123,6 +126,52 @@ public class DeterministicAgentPlanner {
         return "Recordatorios de cobranza enviados por n8n: " + r.enviados() + " (omitidos por duplicado en 24 h: "
                 + r.omitidosPorDuplicado() + ", fallidos: " + r.fallidos() + ")"
                 + (r.motivo() == null ? "." : ". " + r.motivo() + ".");
+    }
+
+    private static boolean isMultichannelInstruction(String instruction) {
+        var argument = Pattern.compile("(?i)\\b(pacienteNombre|telefono|email|telegramChatId|montoBs|concepto|fechaVencimiento|canales)\\s*[:=]").matcher(instruction);
+        boolean hasData = argument.find();
+        String head = plain(hasData ? instruction.substring(0, argument.start()) : instruction);
+        // Existing CRUD commands and their quoted data retain their previous dispatch and validation.
+        if (WRITE_VERB.matcher(head).find()) { return false; }
+        boolean notify = Pattern.compile("\\b(notific(?:ar|a|ame)|avis(?:ar|a|ame))\\b").matcher(head).find();
+        boolean sendMultichannel = head.contains("multicanal") && Pattern.compile("\\b(envi(?:ar|a)|mand(?:ar|a))\\b").matcher(head).find();
+        return (notify || sendMultichannel) && (hasData || head.contains("multicanal") || head.contains("whatsapp")
+                || head.contains("telegram") || head.contains("gmail"));
+    }
+
+    private String notificacionMulticanal(String instruction) {
+        // Separate grammar: adding notification keys must not change existing CRUD parsing/defaults.
+        var pattern = Pattern.compile("(?i)\\b(pacienteNombre|telefono|email|telegramChatId|montoBs|concepto|fechaVencimiento|canales)\\s*[:=]\\s*(?:\"([^\"]*)\"|'([^']*)'|(\\S+))");
+        var matcher = pattern.matcher(instruction);
+        java.util.Map<String,String> values = new java.util.HashMap<>();
+        int first = instruction.length();
+        while (matcher.find()) {
+            first = Math.min(first, matcher.start());
+            String value = matcher.group(2) != null ? matcher.group(2) : matcher.group(3) != null ? matcher.group(3) : matcher.group(4);
+            if (values.put(matcher.group(1).toLowerCase(Locale.ROOT), value) != null) {
+                throw new BusinessRuleException("Un parámetro multicanal está repetido");
+            }
+        }
+        if (Pattern.compile("\\b(no|nunca|jamas|ni|evita|evitar|not|never)\\b").matcher(plain(instruction.substring(0, first))).find()) {
+            return "No ejecuté ninguna notificación: la instrucción contiene una negación.";
+        }
+        boolean demo = values.isEmpty();
+        if (demo && Pattern.compile("(?i)\\b(pacienteNombre|telefono|email|telegramChatId|montoBs|concepto|fechaVencimiento|canales)\\s*[:=]").matcher(instruction).find()) {
+            throw new BusinessRuleException("Un parámetro multicanal tiene un valor no válido");
+        }
+        BigDecimal amount;
+        try { amount = demo ? new BigDecimal("350.00") : new BigDecimal(values.getOrDefault("montobs", "")); }
+        catch (NumberFormatException e) { throw new BusinessRuleException("Indique montoBs numérico para notificar"); }
+        var result = tools.dispararNotificacionMulticanal(demo ? "Juan Pérez" : values.get("pacientenombre"),
+                demo ? "+59170012345" : values.get("telefono"), values.get("email"), values.get("telegramchatid"), amount,
+                demo ? "Cuota 2/3 - Tratamiento de Ortodoncia" : values.get("concepto"),
+                demo ? "2026-11-05" : values.get("fechavencimiento"), values.get("canales"));
+        String channels = result.resultadosPorCanal().stream().map(row -> row.canal() + "=" + row.estado())
+                .collect(java.util.stream.Collectors.joining(", "));
+        return "Notificación multicanal" + (demo ? " de demostración (datos sintéticos)" : "") + ": "
+                + result.modoEjecucion() + ". " + channels
+                + ("SIMULADO_SIN_N8N".equals(result.modoEjecucion()) ? ". Simulación: entrega real no confirmada." : "");
     }
 
     // ---- writes (explicit data required) ------------------------------------------------------------------------

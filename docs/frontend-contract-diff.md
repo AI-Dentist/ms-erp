@@ -36,6 +36,12 @@ Por compatibilidad aditiva, `ejecutarAgenteErp` conserva su retorno **OBJECT** `
 
 `reporteGenerado` añade `titulo`, `sqlGenerado` (alias de `consultaSqlEjecutada`), `filas` (arreglos de texto) y `resumenAnalitico`. `filasJson` conserva sus tipos JSON originales. Las descargas existentes siguen disponibles; se añaden GET con query `reporteId`/`format` y POST JSON al mismo `/api/v1/reports/export`, con idéntica autorización y salida directa al stream HTTP. Ver [contrato de reportes y automatización](ai-ml-mcp-reports.md).
 
+## Notificaciones multicanal S17
+
+Ambos OBJECT `AgenteInteraccionResponse` y `RespuestaAgenteErp` añaden el campo nullable `notificacionMulticanal: NotificacionMulticanalPayload`. La respuesta actual expone `exito: Boolean!`, `modoEjecucion: String!` y `resultadosPorCanal: [ResultadoCanalNotificacion!]!` con `canal`, `proveedor`, `estado` y `destino` no nulos. El historial no inventa resultados: el payload transitorio es null cuando no forma parte de la ejecución actual. El retorno de `ejecutarAgenteErp` permanece intacto.
+
+N8N_LIVE/ENVIADO indica aceptación HTTP 2xx del webhook, no lectura por el destinatario. SIMULADO_SIN_N8N/SIMULADO_OK solo se permite en dev/local; NO_ENVIADO y `exito=false` expresan rechazo/configuración inválida/producción sin transporte disponible. `notificacionN8nEnviada` sigue siendo false para simulaciones. Los destinos y proveedores exactos, los defaults y el texto del chip de demostración están en [el contrato S17](multichannel-notifications.md). Las llamadas legacy por cuotas/no argumentos mantienen su forma y su semántica.
+
 ## Resumen
 
 **37 operaciones del frontend validadas: 2 válidas, 35 inválidas** contra el esquema servido.

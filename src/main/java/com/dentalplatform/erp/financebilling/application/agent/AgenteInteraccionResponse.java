@@ -10,4 +10,15 @@ import java.util.UUID;
 public record AgenteInteraccionResponse(UUID interaccionId, OffsetDateTime fechaEjecucion, String instruccionOriginal,
                                         String respuestaNaturalAgente, List<String> toolsMcpInvocadas,
                                         String accionCrudEjecutada, boolean notificacionN8nEnviada,
-                                        ReportResponse reporteGenerado) { }
+                                        ReportResponse reporteGenerado, NotificacionMulticanalPayload notificacionMulticanal) {
+    public AgenteInteraccionResponse(UUID interaccionId, OffsetDateTime fechaEjecucion, String instruccionOriginal,
+            String respuestaNaturalAgente, List<String> toolsMcpInvocadas, String accionCrudEjecutada,
+            boolean notificacionN8nEnviada, ReportResponse reporteGenerado) {
+        this(interaccionId, fechaEjecucion, instruccionOriginal, respuestaNaturalAgente, toolsMcpInvocadas,
+                accionCrudEjecutada, notificacionN8nEnviada, reporteGenerado, null);
+    }
+    public AgenteInteraccionResponse withNotificacionMulticanal(NotificacionMulticanalPayload payload) {
+        return new AgenteInteraccionResponse(interaccionId, fechaEjecucion, instruccionOriginal, respuestaNaturalAgente,
+                toolsMcpInvocadas, accionCrudEjecutada, notificacionN8nEnviada, reporteGenerado, payload);
+    }
+}

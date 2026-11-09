@@ -92,6 +92,14 @@ Otros ejemplos de respaldo: `resumen financiero`, `cuotas vencidas`, `flujo de c
 
 `modoAutonomoMonitoreo: true` consulta resumen, morosidad y diagnóstico de salud del negocio (caja de hoy, umbral de egresos y recomendaciones); puede enviar recordatorios si n8n está habilitado, pero **nunca ejecuta CRUD**. `PromptInjectionGuardrail` bloquea instrucciones maliciosas antes del procesamiento; es defensa adicional, no reemplaza autorización. `listarHistorialAgente(limite: 20)` admite 1–100: ADMIN ve todas las interacciones; los demás, solo las propias. El historial almacena instrucciones/respuestas: no incluya secretos ni datos personales innecesarios.
 
+### Notificaciones WhatsApp, Telegram y Gmail
+
+`dispararNotificacionMulticanal` y el alias `dispararAlertaCobranzaWhatsapp` aceptan datos explícitos y canales (arreglo, CSV o TODOS). El chip/instrucción **Notificar cobro pendiente por WhatsApp, Telegram y Gmail** usa datos sintéticos identificados en `dev`/`local`, nunca pacientes reales inferidos. GraphQL añade `notificacionMulticanal { exito modoEjecucion resultadosPorCanal { canal proveedor estado destino } }` sin cambiar tipos de retorno ni campos anteriores.
+
+Configure `N8N_ENABLED`, `N8N_WEBHOOK_URL` (ahora por defecto `http://localhost:5678/webhook/erp-notificaciones`) y `N8N_WEBHOOK_SECRET`. La ruta nueva devuelve N8N_LIVE/ENVIADO tras un 2xx; ante caída/timeout o integración deshabilitada simula SOLO en dev/local (SIMULADO_SIN_N8N/SIMULADO_OK). Producción y rechazos HTTP no inventan éxito (NO_ENVIADO). Los recordatorios legacy por cuota mantienen su comportamiento anterior; no pasan a simular entregas. El resultado multicanal actual no se persiste separadamente con PII; el historial expone null en ese campo.
+
+Contrato, defaults, perfiles, privacidad e importación de `infrastructure/n8n/n8n-workflow-multicanal.json`: [guía multicanal](docs/multichannel-notifications.md). El workflow usa Header Auth, Meta test number, credenciales Telegram y Gmail SMTP; nunca se versionan valores reales. `node scripts/verify-n8n-workflow.mjs` ejecuta checks offline de routing, scripts, escaping y confirmaciones sin invocar proveedores. Importar/activar n8n y configurar sus credenciales son pasos operativos separados.
+
 ### Reportes y descargas
 
 1. Tras V5, aprovisione un login nuevo, no propietario y exclusivo SELECT con [scripts/reporting-role.sql](scripts/reporting-role.sql). No modifica credenciales existentes automáticamente.
