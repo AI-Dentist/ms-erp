@@ -56,6 +56,7 @@ public class ErpMcpToolsService {
     private final AgentActorResolver actor;
     private final AgentToolTrace trace;
     private final Clock clock;
+    private final com.dentalplatform.erp.financebilling.application.usecase.DispararNotificacionMulticanalUseCase notifications;
     private final com.dentalplatform.erp.financebilling.application.usecase.ReprogramarCuotaPlanPagoUseCase rescheduleQuota;
 
     public ErpMcpToolsService(MonitoreoNegocioUseCase monitoring, ConsultarFinanzasUseCase finances,
@@ -64,6 +65,18 @@ public class ErpMcpToolsService {
                               GenerarReporteDinamicoSqlService reports, DispararAlertaCobranzaUseCase collections,
                               AgentActorResolver actor, AgentToolTrace trace, Clock clock,
                               com.dentalplatform.erp.financebilling.application.usecase.ReprogramarCuotaPlanPagoUseCase rescheduleQuota) {
+        this(monitoring, finances, createService, expense, reschedule, annul, reports, collections, actor, trace, clock, rescheduleQuota, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ErpMcpToolsService(MonitoreoNegocioUseCase monitoring, ConsultarFinanzasUseCase finances,
+                              CrearServicioOdontologicoUseCase createService, RegistrarEgresoCajaUseCase expense,
+                              ReprogramarPlanPagosUseCase reschedule, AnularOrdenCobroUseCase annul,
+                              GenerarReporteDinamicoSqlService reports, DispararAlertaCobranzaUseCase collections,
+                              AgentActorResolver actor, AgentToolTrace trace, Clock clock,
+                              com.dentalplatform.erp.financebilling.application.usecase.ReprogramarCuotaPlanPagoUseCase rescheduleQuota,
+                              com.dentalplatform.erp.financebilling.application.usecase.DispararNotificacionMulticanalUseCase notifications) {
+        this.notifications = notifications;
         this.rescheduleQuota = rescheduleQuota;
         this.monitoring = monitoring;
         this.finances = finances;
@@ -299,11 +312,44 @@ public class ErpMcpToolsService {
                 flow.totalEgresosBs(), flow.saldoNetoBs(), flow.movimientos().size()), threshold, historical.size(), unusual, List.copyOf(actions));
     }
 
-    @Tool(description = "Envía recordatorios WhatsApp por n8n de cuotas vencidas; devuelve explícitamente no enviado ante caída o integración deshabilitada.")
-    @ToolCategory(ToolCategory.COBRANZA)
+    /** Compatibility for Java callers of the original quota-based alias. */
     @PreAuthorize(CASH)
     public AlertaCobranzaTool dispararAlertaCobranzaWhatsapp(@ToolParam(required = false) List<String> cuotaIds) {
         return dispararAlertaCobranzaN8nTool(cuotaIds);
+    }
+
+    @Tool(description = "Notifica cobro por WhatsApp Meta, Telegram y Gmail. Canales: lista, texto separado por comas o TODOS; vacío = todos. Solo ADMIN/CAJERO, por pedido explícito. Dev/local sin n8n devuelve SIMULADO_SIN_N8N, no entrega real.")
+    @ToolCategory(ToolCategory.COBRANZA)
+    @PreAuthorize(CASH)
+    public NotificacionMulticanalPayload dispararNotificacionMulticanal(String pacienteNombre, String telefono,
+            @ToolParam(required = false) String email, @ToolParam(required = false) String telegramChatId,
+            BigDecimal montoBs, String concepto, String fechaVencimiento,
+            @ToolParam(required = false, description = "WHATSAPP, TELEGRAM, GMAIL: arreglo o texto CSV; TODOS/vacío = los tres") Object canales) {
+        return notify("dispararNotificacionMulticanal", pacienteNombre, telefono, email, telegramChatId, montoBs, concepto, fechaVencimiento, canales);
+    }
+
+    @Tool(name = "dispararAlertaCobranzaWhatsapp", description = "Alias multicanal con los mismos ocho datos de dispararNotificacionMulticanal. Conserva cuotaIds opcional/no argumentos para la ruta legacy de recordatorios vencidos sin simulación de éxito.")
+    @ToolCategory(ToolCategory.COBRANZA)
+    @PreAuthorize(CASH)
+    public Object dispararAlertaCobranzaWhatsappMulticanal(@ToolParam(required = false) String pacienteNombre,
+            @ToolParam(required = false) String telefono, @ToolParam(required = false) String email,
+            @ToolParam(required = false) String telegramChatId, @ToolParam(required = false) BigDecimal montoBs,
+            @ToolParam(required = false) String concepto, @ToolParam(required = false) String fechaVencimiento,
+            @ToolParam(required = false) Object canales, @ToolParam(required = false) List<String> cuotaIds) {
+        boolean explicit = pacienteNombre != null || telefono != null || email != null || telegramChatId != null
+                || montoBs != null || concepto != null || fechaVencimiento != null || canales != null;
+        if (!explicit) { return dispararAlertaCobranzaWhatsapp(cuotaIds); }
+        if (cuotaIds != null && !cuotaIds.isEmpty()) { throw new BusinessRuleException("No combine cuotaIds con parámetros multicanal"); }
+        return notify("dispararAlertaCobranzaWhatsapp", pacienteNombre, telefono, email, telegramChatId, montoBs, concepto, fechaVencimiento, canales);
+    }
+
+    private NotificacionMulticanalPayload notify(String tool, String name, String phone, String email, String chat,
+                                                 BigDecimal amount, String concept, String due, Object channels) {
+        var result = notifications.ejecutar(name, phone, email, chat, amount, concept, due, channels);
+        trace.executed(tool);
+        trace.multichannel(result);
+        trace.n8nSent(result.exito() && "N8N_LIVE".equals(result.modoEjecucion()));
+        return result;
     }
 
     private static void money(BigDecimal amount, boolean positive) {

@@ -62,7 +62,7 @@ docker compose up -d
 
 ## Co-Piloto ERP, MCP y reportes
 
-El único punto de entrada de IA es `ejecutarAgenteErp`. El agente usa las mismas catorce herramientas (nueve legacy y cinco nombres canónicos aditivos) que el servidor MCP autenticado en `/mcp` (Streamable HTTP). Cada herramienta aplica los roles del ERP con la identidad del solicitante; el modelo nunca obtiene permisos adicionales.
+El único punto de entrada de IA es `ejecutarAgenteErp`. El agente usa las mismas quince herramientas (nueve legacy, cinco nombres canónicos iniciales y la nueva notificación multicanal) que el servidor MCP autenticado en `/mcp` (Streamable HTTP). Cada herramienta aplica los roles del ERP con la identidad del solicitante; el modelo nunca obtiene permisos adicionales.
 
 | Capacidad | Herramientas |
 |---|---|

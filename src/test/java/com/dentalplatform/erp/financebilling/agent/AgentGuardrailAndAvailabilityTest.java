@@ -94,7 +94,7 @@ class AgentGuardrailAndAvailabilityTest extends IntegrationTestBase {
                 "listarPacientesConCuotasVencidasTool", "obtenerFlujoCajaTool", "crearServicioOdontologicoTool",
                 "registrarEgresoCajaTool", "reprogramarPlanPagosOAnularDescuentoTool", "anularOrdenCobroPendienteTool",
                 "generarReporteDinamicoSqlTool", "dispararAlertaCobranzaN8nTool", "crearServicioArancel",
-                "registrarEgresoCaja", "reprogramarCuotaPlanPago", "auditarSaludNegocio", "dispararAlertaCobranzaWhatsapp");
+                "registrarEgresoCaja", "reprogramarCuotaPlanPago", "auditarSaludNegocio", "dispararAlertaCobranzaWhatsapp", "dispararNotificacionMulticanal");
         assertThat(tools).extracting(t -> t.get("categoria")).containsOnly("MONITOREO", "ACCION_CRUD", "REPORTE", "COBRANZA");
         assertThat(tools).allSatisfy(t -> assertThat((String) t.get("descripcion")).isNotBlank());
         assertThat(tools.stream().filter(t -> "ACCION_CRUD".equals(t.get("categoria"))).count()).isEqualTo(7);

@@ -44,15 +44,22 @@ public class AgentToolTrace {
         if (run != null) { run.n8nSent |= sent; }
     }
 
+    void multichannel(NotificacionMulticanalPayload payload) {
+        Run run = CURRENT.get();
+        if (run != null) { run.multichannel = payload; }
+    }
+
     public static final class Run {
         private final List<String> tools = new ArrayList<>();
         private String crud;
         private boolean n8nSent;
         private UUID reportId;
+        private NotificacionMulticanalPayload multichannel;
 
         public List<String> tools() { return List.copyOf(tools); }
         public String crud() { return crud; }
         public boolean n8nSent() { return n8nSent; }
         public UUID reportId() { return reportId; }
+        public NotificacionMulticanalPayload multichannel() { return multichannel; }
     }
 }

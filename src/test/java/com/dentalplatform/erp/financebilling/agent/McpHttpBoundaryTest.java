@@ -225,7 +225,7 @@ class McpHttpBoundaryTest {
         String cashier = user("CAJERO");
         String session = initialize(cashier);
         var listed = payload(post(cashier, session, rpc(2, "tools/list", Map.of())));
-        assertThat(listed.path("result").path("tools").size()).isEqualTo(14);
+        assertThat(listed.path("result").path("tools").size()).isEqualTo(15);
         assertThat(listed.toString()).contains("obtenerResumenFinancieroTool", "crearServicioOdontologicoTool");
         var read = payload(post(cashier, session, rpc(3, "tools/call", Map.of("name", "obtenerResumenFinancieroTool",
                 "arguments", Map.of()))));

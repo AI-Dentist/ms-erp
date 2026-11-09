@@ -467,7 +467,7 @@ no se transfieren al comando financiero como claves de deduplicación.
 ## MCP, REST e idempotencia
 
 `/mcp` es un servidor MCP real Spring AI, Streamable HTTP/WebMVC, no REST de negocio.
-Exige autenticación; las catorce herramientas (nueve legacy y cinco canónicas aditivas) operan con la identidad del solicitante:
+Exige autenticación; las quince herramientas (nueve legacy, cinco canónicas iniciales y una nueva multicanal) operan con la identidad del solicitante:
 
 | Grupo | Herramientas exactas | Roles |
 |---|---|---|
@@ -481,7 +481,7 @@ Exige autenticación; las catorce herramientas (nueve legacy y cinco canónicas 
 | Arancel canónico | `crearServicioArancel` | ADMIN |
 | Egreso / salud canónicos | `registrarEgresoCaja`, `auditarSaludNegocio` | CAJA |
 | Cuota individual | `reprogramarCuotaPlanPago` | PLAN |
-| WhatsApp canónico | `dispararAlertaCobranzaWhatsapp` | CAJA |
+| Notificaciones canónicas | `dispararAlertaCobranzaWhatsapp`, `dispararNotificacionMulticanal` | CAJA |
 
 Parámetros, categoría persistida, diagnóstico y secret n8n fail-closed: [extensión IA/MCP/reportes](ai-ml-mcp-reports.md).
 
