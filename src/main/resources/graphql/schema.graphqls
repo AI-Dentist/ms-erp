@@ -99,6 +99,7 @@ type Mutation {
 
     cobrarCuotaEnEfectivo(input: CobrarEfectivoInput!): Recibo!
     generarQrPagoFacil(cuotaId: UUID!, ciNitCliente: String!, razonSocialCliente: String!): TransaccionQr!
+    verificarPagoQrPagoFacil(pagofacilTransactionId: String!): Recibo
     simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
 
     registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!

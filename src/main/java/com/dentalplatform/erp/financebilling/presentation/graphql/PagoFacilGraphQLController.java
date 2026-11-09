@@ -5,6 +5,7 @@ import com.dentalplatform.erp.financebilling.application.usecase.*;
 import com.dentalplatform.erp.financebilling.domain.model.*;
 import com.dentalplatform.erp.financebilling.domain.repository.TransaccionQrRepository;
 import com.dentalplatform.erp.shared.domain.exception.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
@@ -19,6 +20,7 @@ import java.util.UUID;
 public class PagoFacilGraphQLController {
     private final GenerarQrPagoFacilUseCase generate;
     private final ConfirmarPagoQrWebhookUseCase confirm;
+    private final VerificarPagoQrPagoFacilUseCase verify;
     private final TransaccionQrRepository transactions;
     private final PagoFacilGatewayPort gateway;
     private final Environment environment;
@@ -28,9 +30,19 @@ public class PagoFacilGraphQLController {
     public PagoFacilGraphQLController(GenerarQrPagoFacilUseCase generate, ConfirmarPagoQrWebhookUseCase confirm,
                                       TransaccionQrRepository transactions, PagoFacilGatewayPort gateway,
                                       Environment environment, Clock clock,
+                                      boolean simulation) {
+        this(generate, confirm, null, transactions, gateway, environment, clock, simulation);
+    }
+
+    @Autowired
+    public PagoFacilGraphQLController(GenerarQrPagoFacilUseCase generate, ConfirmarPagoQrWebhookUseCase confirm,
+                                      VerificarPagoQrPagoFacilUseCase verify,
+                                      TransaccionQrRepository transactions, PagoFacilGatewayPort gateway,
+                                      Environment environment, Clock clock,
                                       @Value("${erp.pagofacil.dev-simulation-enabled:false}") boolean simulation) {
         this.generate = generate;
         this.confirm = confirm;
+        this.verify = verify;
         this.transactions = transactions;
         this.gateway = gateway;
         this.environment = environment;
@@ -47,6 +59,13 @@ public class PagoFacilGraphQLController {
 
     @MutationMapping
     @PreAuthorize("hasAnyRole('ADMIN','CAJERO')")
+    public Recibo verificarPagoQrPagoFacil(@Argument String pagofacilTransactionId) {
+        if (verify == null) { throw new UnsupportedPagoFacilIntegrationException(); }
+        return verify.ejecutar(pagofacilTransactionId);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasAnyRole('ADMIN','CAJERO')")
     public Recibo simularConfirmacionQrDev(@Argument String pagofacilTransactionId) {
         gateway.exigirMock();
         // Explicit property AND a development profile (dev or local), never together with a production profile.
@@ -57,5 +76,4 @@ public class PagoFacilGraphQLController {
                 .orElseThrow(() -> new ResourceNotFoundException("La transacción QR no existe"));
         return confirm.ejecutar(pagofacilTransactionId, transaction.monto().amount(), OffsetDateTime.now(clock));
     }
-
 }

@@ -124,6 +124,7 @@ type Mutation {
   registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
   simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
   sincronizarOperacionOffline(input: OfflineOperationInput!): OfflineOperationReceipt!
+  verificarPagoQrPagoFacil(pagofacilTransactionId: String!): Recibo
   vincularIdentidadOdontologo(input: VincularIdentidadOdontologoInput!): UUID!
   vincularIdentidadUsuario(input: VincularIdentidadUsuarioInput!): UUID!
 }

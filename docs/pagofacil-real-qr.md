@@ -21,4 +21,13 @@ The adapter POSTs `{}` to `/login`, caches Bearer credentials until five minutes
 
 The QR image is stored as pure PNG Base64, never a data-URI prefix. Provider expiration timestamps without offsets use Bolivia time (`America/La_Paz`); offset-bearing timestamps retain their instant. Missing expiry uses the existing ERP expiry configuration. Invalid protocol envelopes, PNG data, payment methods or provider dates fail without manufacturing a mock result.
 
+## Confirmation & Active Verification
+
+Two confirmation mechanisms are supported while preserving pessimistic order-then-QR lock ordering:
+
+1. **Active Verification via GraphQL:** `verificarPagoQrPagoFacil(pagofacilTransactionId: String!): Recibo` allows authenticated `ADMIN` and `CAJERO` users to re-query the provider's `/query-transaction` endpoint directly. This enables frontend check buttons without exposing a public webhook tunnel to localhost. When a transaction is already confirmed, it returns the existing receipt immediately without contacting the provider.
+2. **Dual Webhook Dispatcher (`POST /api/v1/webhooks/pagofacil`):**
+   - **Local Mock Callback:** Requires header `X-Local-Mock-Secret` and payload `{transactionId, amountBs, confirmedAt}`.
+   - **Official PagoFácil Callback:** Receives official provider notifications `{PedidoID, Fecha, Hora, MetodoPago, Estado}`. Rather than trusting callback body fields, the service uses `PedidoID` (the persisted company transaction reference) to perform an authenticated active query against `/query-transaction`. If the provider confirms payment with valid amount and currency, the installment settles and the exact provider envelope `{"error":0,"status":1,"message":"Pago confirmado correctamente","values":true}` is returned.
+
 Reference: `ServiciosPagoFacil_QrMaster_v1.1.0.pdf` (2025-07-02). Protocol checks use a synthetic local HTTP server, not real provider credentials or proof of live provider acceptance.

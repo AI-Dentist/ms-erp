@@ -135,4 +135,60 @@ class RealPagoFacilHttpTest {
         }
     }
     @Test void generationUsesRealHttpAndKeepsFullErpAmount() throws Exception { generate(); state(false); }
+    @Test void activeQueryConfirmsFullAmountAndRetryReturnsSameReceiptWithoutProviderCall() throws Exception {
+        generate(); JsonNode receipt=verify(reference);
+        assertThat(receipt.path("montoTotalBs").decimalValue()).isEqualByComparingTo("350");
+        assertThat(receipt.path("ciNitCliente").asString()).isEqualTo("12345");
+        assertThat(receipt.path("razonSocialCliente").asString()).isEqualTo("Cliente sintético");
+        int calls=paths.size(); assertThat(verify(reference)).isEqualTo(receipt); assertThat(paths).hasSize(calls); state(true);
+    }
+    @Test void officialCallbackLooksUpCompanyNumberRequeriesAndReturnsExactEnvelope() throws Exception {
+        generate();
+        var response=post("/api/v1/webhooks/pagofacil",Map.of("PedidoID",company,"Fecha","2026-11-09","Hora","10:00:00","MetodoPago","QR","Estado",2),null);
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+        assertThat(JSON.readTree(response.body())).isEqualTo(JSON.readTree("{\"error\":0,\"status\":1,\"message\":\"Pago confirmado correctamente\",\"values\":true}"));
+        assertThat(paths).contains("/query-transaction"); state(true);
+        JsonNode receipt=verify(reference); assertThat(verify(company)).isEqualTo(receipt);
+    }
+    @Test void unpaidMismatchAndForeignTransactionLeaveAllPublicFinancialStateUnchanged() throws Exception {
+        generate(); JsonNode before=cash();
+        for(String[] rejected:List.of(new String[]{"1","0.35"},new String[]{"2","0.34"})) {
+            status=rejected[0]; paidAmount=rejected[1];
+            assertThat(graph(verifyQuery(reference),admin).has("errors")).isTrue(); state(false); assertThat(cash()).isEqualTo(before);
+            var callback=post("/api/v1/webhooks/pagofacil",Map.of("PedidoID",company,"Estado",2),null);
+            assertThat(callback.statusCode()).isEqualTo(400); state(false); assertThat(cash()).isEqualTo(before);
+        }
+        status="2"; paidAmount="0.35"; wrongIdentity=true;
+        assertThat(graph(verifyQuery(reference),admin).has("errors")).isTrue(); state(false); assertThat(cash()).isEqualTo(before);
+    }
+    @Test void originalAmountAndAllSpecifiedPaidStatusesAreAccepted() throws Exception {
+        generate(); status="COMPLETED"; paidAmount="350.00"; verify(reference); state(true);
+    }
+    @Test void officialCallbackNeverAuthenticatesThroughBodyStatusAloneOrMockFormat() throws Exception {
+        generate(); status="1";
+        assertThat(post("/api/v1/webhooks/pagofacil",Map.of("PedidoID",company,"Estado","PAGADO"),null).statusCode()).isEqualTo(400);
+        assertThat(post("/api/v1/webhooks/pagofacil",Map.of("transactionId",reference,"amountBs",350,"confirmedAt",OffsetDateTime.now().toString()),null).statusCode()).isEqualTo(401);
+        state(false);
+    }
+    @Test void cashierAllowedButDentistAndAnonymousCannotVerify() throws Exception {
+        generate();
+        String dentist="dentist-"+UUID.randomUUID(), cashier="cashier-"+UUID.randomUUID();
+        for(var user:Map.of(dentist,"ODONTOLOGO",cashier,"CAJERO").entrySet())
+            jdbc.update("INSERT INTO usuarios(rol_id,username,email,nombre_completo,activo) SELECT id,?,?,'Synthetic',true FROM roles WHERE codigo=?",user.getKey(),user.getKey()+"@test.invalid",user.getValue());
+        int calls=paths.size();
+        assertThat(graph(verifyQuery(reference),dentist).path("errors").get(0).at("/extensions/classification").asString()).isEqualTo("FORBIDDEN");
+        assertThat(post("/graphql",Map.of("query",verifyQuery(reference)),null).statusCode()).isEqualTo(401);
+        assertThat(paths).hasSize(calls); state(false);
+        assertThat(graph(verifyQuery(reference),cashier).has("errors")).isFalse(); state(true);
+    }
+    @Test void concurrentQueryAndCallbackProduceOneFullReceipt() throws Exception {
+        generate();
+        try(var executor=Executors.newVirtualThreadPerTaskExecutor()) {
+            var query=executor.submit(()->verify(reference));
+            var callback=executor.submit(()->post("/api/v1/webhooks/pagofacil",Map.of("PedidoID",company),null));
+            JsonNode receipt=query.get(30,TimeUnit.SECONDS);
+            assertThat(callback.get(30,TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+            assertThat(verify(reference)).isEqualTo(receipt); state(true);
+        }
+    }
 }
