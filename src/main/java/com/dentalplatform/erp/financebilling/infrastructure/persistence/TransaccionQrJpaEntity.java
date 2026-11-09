@@ -13,6 +13,7 @@ public class TransaccionQrJpaEntity {
     @Id UUID id;
     @Column(name = "cuota_id", nullable = false) UUID cuotaId;
     @Column(name = "pagofacil_transaction_id", nullable = false, unique = true, length = 100) String reference;
+    @Column(name = "company_transaction_id", unique = true, length = 100) String companyReference;
     @Column(name = "qr_imagen_base64", nullable = false, columnDefinition = "text") String image;
     @Column(name = "monto_bs", nullable = false, precision = 12, scale = 2) BigDecimal amount;
     @Column(length = 10) String moneda;
@@ -31,6 +32,7 @@ public class TransaccionQrJpaEntity {
         e.id = t.id();
         e.cuotaId = t.cuotaId();
         e.reference = t.pagofacilTransactionId();
+        e.companyReference = t.companyTransactionId();
         e.image = t.qrImagenBase64();
         e.amount = t.monto().amount();
         e.moneda = "BOB";
@@ -46,6 +48,6 @@ public class TransaccionQrJpaEntity {
 
     TransaccionQr toDomain() {
         return new TransaccionQr(id, cuotaId, reference, image, Money.of(amount), estado, created, expires,
-                confirmed, ciNit, name, cashier);
+                confirmed, ciNit, name, cashier, companyReference);
     }
 }

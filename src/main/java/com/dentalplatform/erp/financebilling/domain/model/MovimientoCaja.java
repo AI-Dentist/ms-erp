@@ -17,7 +17,7 @@ public record MovimientoCaja(UUID id, UUID cuotaId, UUID usuarioCajeroId, TipoMo
                 texto(categoria, "categoría", 50), metodo, monto, texto(descripcion, "descripción", Integer.MAX_VALUE), now);
     }
 
-    static String texto(String value, String field, int max) {
+    public static String texto(String value, String field, int max) {
         if (value == null || value.isBlank() || value.trim().length() > max) {
             throw new BusinessRuleException("El campo " + field + " es obligatorio y admite hasta " + max + " caracteres");
         }

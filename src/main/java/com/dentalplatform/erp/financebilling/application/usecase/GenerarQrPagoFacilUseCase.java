@@ -37,7 +37,7 @@ public class GenerarQrPagoFacilUseCase {
 
     @Transactional
     public TransaccionQr ejecutar(UUID quotaId, String ciNit, String name) {
-        gateway.exigirMock();
+        gateway.exigirDisponible();
         var current = actor.actual();
         var cashier = users.buscarPorKeycloakIdOUsername(current.keycloakId().orElse(null), current.username())
                 .filter(u -> u.isActivo() && (u.getRol().codigo().equals("ADMIN") || u.getRol().codigo().equals("CAJERO")))
@@ -53,9 +53,14 @@ public class GenerarQrPagoFacilUseCase {
         if (expirationMinutes < 1 || expirationMinutes > 1440) {
             throw new BusinessRuleException("Expiración QR inválida");
         }
-        var qr = gateway.generar();
+        ciNit = MovimientoCaja.texto(ciNit, "CI/NIT", 30);
+        name = MovimientoCaja.texto(name, "razón social", 150);
+        String companyReference = "ERP-QR-" + UUID.randomUUID();
+        var qr = gateway.generar(new PagoFacilGatewayPort.SolicitudQr(companyReference, quota.montoCuota().amount(),
+                ciNit, name, order.getPacienteId().toString(), "Cuota odontológica"));
         var now = OffsetDateTime.now(clock);
-        return transactions.guardar(TransaccionQr.generar(quotaId, quota.montoCuota(), qr.reference(), qr.imageBase64(),
-                ciNit, name, cashier.getId(), now, now.plusMinutes(expirationMinutes)));
+        var transaction = TransaccionQr.generar(quotaId, quota.montoCuota(), qr.reference(), qr.imageBase64(),
+                ciNit, name, cashier.getId(), now, qr.expiration() == null ? now.plusMinutes(expirationMinutes) : qr.expiration());
+        return transactions.guardar(gateway.esMock() ? transaction : transaction.conCorrelacionEmpresa(companyReference));
     }
 }

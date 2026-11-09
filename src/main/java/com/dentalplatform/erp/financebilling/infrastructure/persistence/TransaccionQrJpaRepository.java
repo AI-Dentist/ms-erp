@@ -7,12 +7,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TransaccionQrJpaRepository extends JpaRepository<TransaccionQrJpaEntity, UUID> {
-    Optional<TransaccionQrJpaEntity> findByReference(String reference);
+    @Query("select t from TransaccionQrJpaEntity t where t.reference = :reference or t.companyReference = :reference")
+    Optional<TransaccionQrJpaEntity> findByReference(@Param("reference") String reference);
 
     Optional<TransaccionQrJpaEntity> findFirstByCuotaIdAndEstadoAndExpiresAfterOrderByCreatedDesc(
             UUID cuotaId, String estado, java.time.OffsetDateTime now);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select t from TransaccionQrJpaEntity t where t.reference = :reference")
+    @Query("select t from TransaccionQrJpaEntity t where t.reference = :reference or t.companyReference = :reference")
     Optional<TransaccionQrJpaEntity> bloquear(@Param("reference") String reference);
 }
