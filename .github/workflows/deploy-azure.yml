@@ -1,0 +1,27 @@
+name: Deploy Azure
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-azure-ms-erp
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy over native SSH
+        env:
+          SSH_KEY: ${{ secrets.AZURE_SSH_KEY }}
+        run: |
+          set -eu
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/azure_deploy"
+          chmod 600 "$HOME/.ssh/azure_deploy"
+          ssh-keyscan -H 20.83.242.208 >> "$HOME/.ssh/known_hosts"
+          rsync -az --delete --exclude .git --exclude .env -e "ssh -i $HOME/.ssh/azure_deploy -o IdentitiesOnly=yes" ./ azureuser@20.83.242.208:/home/azureuser/deploy/ms-erp/
+          ssh -i "$HOME/.ssh/azure_deploy" -o IdentitiesOnly=yes azureuser@20.83.242.208 'cd /home/azureuser/deploy/ms-erp && docker compose up -d --build --remove-orphans'
