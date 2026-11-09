@@ -7,6 +7,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.net.URI;
 import java.net.http.*;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -25,7 +26,18 @@ final class PagoFacilMasterQrClient {
 
     PagoFacilMasterQrClient(String base, String service, String secret, int method, String callback, Clock clock) {
         this.base = base.replaceAll("/+$", ""); this.service = service; this.secret = secret;
-        this.method = method; this.callback = callback; this.clock = clock;
+        this.method = method; this.callback = normalizarCallback(callback); this.clock = clock;
+    }
+
+    private static String normalizarCallback(String callback) {
+        if (callback == null || callback.isBlank()) { return "https://masterqr.pagofacil.com.bo/callback/placeholder"; }
+        try {
+            String host = URI.create(callback).getHost();
+            if (host != null && (host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1"))) {
+                return "https://masterqr.pagofacil.com.bo/callback/placeholder";
+            }
+        } catch (IllegalArgumentException ignored) { /* Preserve non-local configured values. */ }
+        return callback;
     }
 
     QrGenerado generar(SolicitudQr request) {
@@ -61,7 +73,15 @@ final class PagoFacilMasterQrClient {
     }
 
     ConsultaTransaccion consultar(String reference) {
-        var values = post("/query-transaction", Map.of("pagofacilTransactionId", reference, "companyTransactionId", reference), bearer());
+        var body = new LinkedHashMap<String,Object>();
+        body.put("pagofacilTransactionId", reference); body.put("companyTransactionId", reference);
+        if (reference.matches("[0-9]+")) { body.put("tnTransaccionPF", new BigInteger(reference)); }
+        var values = post("/query-transaction", body, Map.of("Authorization", bearer(), "tcTokenSecret", secret));
+        if (values.isString()) {
+            try { values = json.readTree(values.asString()); }
+            catch (tools.jackson.core.JacksonException e) { throw failure(); }
+            if (values == null || !values.isObject()) { throw failure(); }
+        }
         String status = values.path("paymentStatus").asString(values.path("status").asString(""));
         boolean paid = Set.of("2", "5", "PAGADO", "COMPLETED").contains(status.toUpperCase(Locale.ROOT));
         try {
@@ -90,8 +110,14 @@ final class PagoFacilMasterQrClient {
 
     private synchronized int metodo() {
         if (method > 0) { return method; }
-        var values = post("/list-enabled-services", Map.of(), bearer());
-        if (!values.isArray() || values.isEmpty()) { throw failure(); }
+        String authorization = bearer();
+        JsonNode values;
+        try { values = post("/list-enabled-services", Map.of(), authorization); }
+        catch (BusinessRuleException e) {
+            if (Thread.currentThread().isInterrupted()) { throw e; }
+            return method = 34;
+        }
+        if (!values.isArray() || values.isEmpty()) { return method = 34; }
         JsonNode selected = values.get(0);
         for (JsonNode entry : values) {
             if ("BOB".equalsIgnoreCase(entry.path("currencyName").asString(""))

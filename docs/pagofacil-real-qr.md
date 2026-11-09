@@ -8,12 +8,12 @@ Real transport is opt-in: set `PAGOFACIL_MOCK_ENABLED=false` and supply both pro
 | --- | --- |
 | `PAGOFACIL_BASE_URL` | `https://masterqr.pagofacil.com.bo/api/services/v2` |
 | `PAGOFACIL_TOKEN_SERVICE` | Empty; login `tcTokenService` header |
-| `PAGOFACIL_TOKEN_SECRET` | Empty; login `tcTokenSecret` header |
-| `PAGOFACIL_PAYMENT_METHOD_ID` | `0`; when <=0 discover the first enabled BOB QR service, otherwise first list entry |
-| `PAGOFACIL_CALLBACK_URL` | Existing profile callback URL; override with a reachable HTTPS URL for real callbacks |
+| `PAGOFACIL_TOKEN_SECRET` | Empty; `tcTokenSecret` header for login and transaction queries |
+| `PAGOFACIL_PAYMENT_METHOD_ID` | `0`; when <=0 discover the first enabled BOB QR service, otherwise first list entry; use and cache `34` if discovery fails or is empty |
+| `PAGOFACIL_CALLBACK_URL` | Blank, `localhost` or `127.0.0.1` host uses `https://masterqr.pagofacil.com.bo/callback/placeholder`; configure a reachable HTTPS URL for real callbacks |
 | `PAGOFACIL_MOCK_ENABLED` | `true`; explicit `false` is required even when tokens exist |
 
-The adapter POSTs `{}` to `/login`, caches Bearer credentials until five minutes before expiry, discovers/caches the payment method through `/list-enabled-services`, and POSTs `/generate-qr`. It sends `Response-Language: es` and JSON throughout, uses bounded connect/request timeouts and never follows redirects. Non-HTTPS transport is accepted only on loopback for local protocol tests. Credential headers are sent only to login; upstream bodies/messages are not exposed in errors. There is no automatic payment/generation retry.
+The adapter POSTs `{}` to `/login`, caches Bearer credentials until five minutes before expiry, discovers/caches the payment method through `/list-enabled-services`, and POSTs `/generate-qr`. It sends `Response-Language: es` and JSON throughout, uses bounded connect/request timeouts and never follows redirects. Non-HTTPS transport is accepted only on loopback for local protocol tests. The service token is sent only to login; the secret is sent to login and transaction queries. Queries retain both reference fields and also send numeric ASCII-only references as `tnTransaccionPF`; query `values` may be an object or a JSON-encoded string. Upstream bodies/messages are not exposed in errors. There is no automatic payment/generation retry.
 
 ## Deliberate amount policy (S19 / L27)
 

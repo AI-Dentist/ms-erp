@@ -27,6 +27,8 @@ class PagoFacilProtocolTest {
     String queried = "{\"paymentStatus\":2,\"amount\":\"0.35\",\"currencyId\":2}";
     int error;
     int httpStatus = 200;
+    int servicesStatus = 200;
+    final List<String> querySecrets = new CopyOnWriteArrayList<>();
 
     @BeforeEach void start() throws Exception {
         generated = "{\"transactionId\":\"provider-123\",\"qrBase64\":\"data:image/png;base64," + PNG
@@ -45,7 +47,11 @@ class PagoFacilProtocolTest {
                 assertThat(exchange.getRequestHeaders().getFirst("Authorization")).isNull();
             } else {
                 assertThat(exchange.getRequestHeaders().getFirst("Authorization")).isEqualTo("Bearer synthetic-bearer");
-                assertThat(exchange.getRequestHeaders().getFirst("tcTokenSecret")).isNull();
+                if (path.equals("/query-transaction")) {
+                    querySecrets.add(Objects.toString(exchange.getRequestHeaders().getFirst("tcTokenSecret"), ""));
+                } else {
+                    assertThat(exchange.getRequestHeaders().getFirst("tcTokenSecret")).isNull();
+                }
             }
             String values = switch (path) {
                 case "/login" -> login;
@@ -56,7 +62,7 @@ class PagoFacilProtocolTest {
             };
             byte[] response = ("{\"error\":" + error + ",\"status\":2007,\"values\":" + values + "}").getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(httpStatus, response.length);
+            exchange.sendResponseHeaders(path.equals("/list-enabled-services") ? servicesStatus : httpStatus, response.length);
             exchange.getResponseBody().write(response);
             exchange.close();
         });
@@ -64,8 +70,11 @@ class PagoFacilProtocolTest {
     }
     @AfterEach void stop() { server.stop(0); }
     PagoFacilHttpAdapter adapter(int method, Clock clock) {
+        return adapter(method, clock, "https://example.invalid/callback");
+    }
+    PagoFacilHttpAdapter adapter(int method, Clock clock, String callback) {
         return new PagoFacilHttpAdapter(false, "http://127.0.0.1:" + server.getAddress().getPort(),
-                "synthetic-service", "synthetic-secret", method, "https://example.invalid/callback", clock);
+                "synthetic-service", "synthetic-secret", method, callback, clock);
     }
     SolicitudQr request(String amount) {
         return new SolicitudQr("ERP-QR-synthetic", new BigDecimal(amount), "12345", "Cliente sintético", "patient-code", "Cuota odontológica");
@@ -114,6 +123,40 @@ class PagoFacilProtocolTest {
         }
         assertThat(paths).doesNotContain("/list-enabled-services");
     }
+    @Test void localOrEmptyCallbackUsesProviderPlaceholder() {
+        for (String callback : List.of("", "  ", "http://localhost:8080/callback", "http://127.0.0.1:8080/callback")) {
+            adapter(4, Clock.systemUTC(), callback).generar(request("350"));
+            assertThat(bodies.getLast().path("callbackUrl").asString())
+                    .isEqualTo("https://masterqr.pagofacil.com.bo/callback/placeholder");
+        }
+        adapter(4, Clock.systemUTC(), "https://localhost.example.invalid/callback").generar(request("350"));
+        assertThat(bodies.getLast().path("callbackUrl").asString()).isEqualTo("https://localhost.example.invalid/callback");
+    }
+    @Test void unavailableOrEmptyServicesUseAndCacheMethod34() {
+        for (int status : List.of(200, 503)) {
+            paths.clear();
+            services = "[]";
+            servicesStatus = status;
+            var adapter = adapter(-1, Clock.systemUTC());
+            assertThat(adapter.generar(request("350")).reference()).isEqualTo("provider-123");
+            assertThat(bodies.getLast().path("paymentMethod").asInt()).isEqualTo(34);
+            adapter.generar(request("350"));
+            assertThat(paths).containsExactly("/login", "/list-enabled-services", "/generate-qr", "/generate-qr");
+        }
+    }
+    @Test void queryAddsSecretAndNumericLegacyReferenceAndReadsJsonStringValues() {
+        queried = json.writeValueAsString(queried);
+        var adapter = adapter(4, Clock.systemUTC());
+        var paid = adapter.consultarTransaccion("12345678901234567890");
+        assertThat(paid.pagado()).isTrue();
+        assertThat(paid.amount()).isEqualByComparingTo("0.35");
+        assertThat(bodies.getLast()).isEqualTo(json.readTree("{\"pagofacilTransactionId\":\"12345678901234567890\",\"companyTransactionId\":\"12345678901234567890\",\"tnTransaccionPF\":12345678901234567890}"));
+        adapter.consultarTransaccion("provider-123");
+        assertThat(bodies.getLast()).isEqualTo(json.readTree("{\"pagofacilTransactionId\":\"provider-123\",\"companyTransactionId\":\"provider-123\"}"));
+        assertThat(querySecrets).containsExactly("synthetic-secret", "synthetic-secret");
+        queried = "\"not-json\"";
+        assertThatThrownBy(() -> adapter.consultarTransaccion("123")).hasMessageContaining("PagoFácil");
+    }
     @Test void tokenRenewsFiveMinutesBeforeExpiry() {
         class MutableClock extends Clock {
             Instant instant = Instant.parse("2026-11-09T00:00:00Z");
@@ -142,9 +185,7 @@ class PagoFacilProtocolTest {
         assertThatThrownBy(() -> adapter.generar(request("350"))).hasMessageContaining("PagoFácil");
         assertThat(paths).containsOnly("/login");
     }
-    @Test void malformedQrAndEmptyServicesFailWithoutFallbackMock() {
-        services = "[]";
-        assertThatThrownBy(() -> adapter(0, Clock.systemUTC()).generar(request("350"))).hasMessageContaining("PagoFácil");
+    @Test void malformedQrFailsWithoutFallbackMock() {
         generated = "{\"transactionId\":\"provider-123\",\"qrBase64\":\"not-base64\"}";
         assertThatThrownBy(() -> adapter(4, Clock.systemUTC()).generar(request("350"))).hasMessageContaining("PagoFácil");
     }
