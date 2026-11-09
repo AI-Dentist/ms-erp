@@ -42,6 +42,7 @@ erp:
     webhook-secret: ${PAGOFACIL_WEBHOOK_SECRET:local-only-pagofacil-mock-secret}
   n8n:
     enabled: ${N8N_ENABLED:false}
+    webhook-url: ${N8N_WEBHOOK_URL:http://localhost:5678/webhook/erp-notificaciones}
   receipts:
     # SeaweedFS from docker-compose (bucket erp-receipts); Recibo.pdfUrlS3 resolves to a browser-downloadable presigned URL.
     mode: s3
