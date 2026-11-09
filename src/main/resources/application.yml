@@ -50,8 +50,10 @@ spring:
     openai:
       api-key: ${OPENAI_API_KEY:not-configured}
       chat:
+        api-key: ${erp.ai.providers.${AI_PROVIDER:openai}.api-key}
+        base-url: ${erp.ai.providers.${AI_PROVIDER:openai}.base-url}
         options:
-          model: ${ERP_AI_MODEL:gpt-4o-mini}
+          model: ${erp.ai.providers.${AI_PROVIDER:openai}.model}
           temperature: 0.0
 
 server:
@@ -64,6 +66,16 @@ management:
         include: health,info
 
 erp:
+  ai:
+    providers:
+      openai:
+        api-key: ${spring.ai.openai.api-key}
+        base-url: ${spring.ai.openai.base-url:https://api.openai.com/v1}
+        model: ${ERP_AI_MODEL:${OPENAI_MODEL:gpt-4o-mini}}
+      gemini:
+        api-key: ${GEMINI_API_KEY:not-configured}
+        base-url: https://generativelanguage.googleapis.com/v1beta/openai
+        model: ${GEMINI_MODEL:gemini-2.5-flash}
   billing-saga:
     retry:
       max-attempts: ${ERP_BILLING_SAGA_RETRY_MAX_ATTEMPTS:3}

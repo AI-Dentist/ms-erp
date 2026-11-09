@@ -13,6 +13,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Default (production-like) profile with no AI key: the guardrail still runs first and nothing executes. */
 class AgentGuardrailAndAvailabilityTest extends IntegrationTestBase {
 
+    @org.springframework.test.context.DynamicPropertySource
+    static void emptyKey(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("OPENAI_API_KEY", () -> "");
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     org.springframework.graphql.execution.GraphQlSource graphQlSource;
 
@@ -45,15 +50,14 @@ class AgentGuardrailAndAvailabilityTest extends IntegrationTestBase {
 
     @Test
     @WithMockUser(username = "noconf-admin", roles = "ADMIN")
-    void withoutProviderKeyOutsideDevProfilesTheAgentFailsExplicitlyAndInventsNothing() {
+    void withoutProviderKeyOutsideDevProfilesTheAgentUsesLabeledFallback() {
         int services = count(jdbc, "servicios_odontologicos"), history = count(jdbc, "agente_interacciones");
-
-        graphQl.document(EXECUTE).variable("i", "Crea el servicio codigo=NOCONF nombre=\"Sin IA\" precio=10").execute().errors()
-                .expect(e -> e.getErrorType() == ErrorType.BAD_REQUEST
-                        && e.getMessage().startsWith("Agente IA no configurado")).verify();
-
+        graphQl.document(EXECUTE).variable("i", "cuéntame un chiste").execute()
+                .path("ejecutarAgenteErp.respuestaNaturalAgente").entity(String.class)
+                .matches(answer -> answer.startsWith(LABEL) && answer.contains("No entendí"))
+                .path("ejecutarAgenteErp.toolsMcpInvocadas").entityList(String.class).hasSize(0);
         assertThat(count(jdbc, "servicios_odontologicos")).isEqualTo(services);
-        assertThat(count(jdbc, "agente_interacciones")).isEqualTo(history);
+        assertThat(count(jdbc, "agente_interacciones")).isEqualTo(history + 1);
     }
 
     @Test

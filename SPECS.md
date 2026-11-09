@@ -76,7 +76,7 @@ com.dentalplatform.erp
 
 **Reporte y descarga:** caché temporal por `reporteId` UUID, columnas y filas JSON, gráfico sugerido `BARRAS|LINEAS|TORTA|TABLA` y URLs `GET /api/v1/reports/export/{reporteId}/{format}` (`format`: `xlsx|pdf`). `ExcelReportExporter.java` usa Apache POI y `PdfReportExporter.java` OpenPDF; ambos generan binarios reales con membrete de la clínica e importes en Bs. `ReportExportRestController.java` descarga el resultado almacenado, sin repetir la consulta.
 
-**Sin clave de proveedor:** OpenAI o Gemini por su URL base compatible con OpenAI. Solo en perfiles `dev` y `local`, usar un planificador determinístico por reglas que permita probar CRUD, monitoreo y reportes/descargas; cada respuesta debe indicar que es un respaldo no IA. En producción sin clave, devolver error explícito de proveedor no configurado, nunca una respuesta inventada. El respaldo no ejecuta modelos locales ni omite autorizaciones o guardrails.
+**Selección y respaldo del proveedor:** `AI_PROVIDER=openai` (predeterminado) o `gemini` por su URL base compatible con OpenAI; claves y modelos mediante `OPENAI_API_KEY`/`OPENAI_MODEL` o `GEMINI_API_KEY`/`GEMINI_MODEL`. Sin clave del proveedor seleccionado, incluso en `prod`, usar el planificador determinístico existente para CRUD, monitoreo y reportes/descargas; cada respuesta debe indicar que es un respaldo no IA, nunca una respuesta de IA inventada. El respaldo no ejecuta modelos locales ni omite autorizaciones o guardrails. Detalles en [docs/ai-providers.md](docs/ai-providers.md).
 
 ## 2. Esquema de Base de Datos PostgreSQL 18 (`V1__init_erp_schema.sql`)
 

@@ -45,7 +45,7 @@ Este microservicio forma parte de una plataforma odontológica compuesta por 3 m
    | Reportes | `generarReporteDinamicoSqlTool`: Spring AI Text-to-SQL protegido; caché temporal por `reporteId` UUID, columnas/filas JSON, gráfico `BARRAS|LINEAS|TORTA|TABLA` y URLs de descarga Excel/PDF. |
    | Cobranza | `dispararAlertaCobranzaN8nTool`: webhook n8n para recordatorios WhatsApp con datos de cuota o QR PagoFácil al detectar morosidad o por orden del administrador. |
 
-5. **Proveedor y Respaldo:** OpenAI o Gemini mediante su URL base compatible con OpenAI. Sin clave, únicamente en `dev` y `local`, el agente usa un planificador determinístico por reglas, identificado en **cada respuesta** como respaldo no IA. En producción sin clave devuelve un error explícito de proveedor no configurado, nunca una respuesta inventada.
+5. **Proveedor y Respaldo:** `AI_PROVIDER=openai` (predeterminado) o `gemini` mediante su URL base compatible con OpenAI, con las claves y modelos de sus respectivas variables de entorno. Sin clave del proveedor seleccionado, incluso en `prod`, el agente usa el planificador determinístico existente, identificado en **cada respuesta** como respaldo no IA; nunca una respuesta de IA inventada. El respaldo conserva autorizaciones y guardrails. Consulte [docs/ai-providers.md](docs/ai-providers.md).
 
 ## 5. Plan de Ejecución por Fases (Orden Estricto para el Agente)
 * **Fase 1 (Infraestructura y Base de Datos):** Crear `pom.xml`, `docker-compose.yml` (PostgreSQL 18, RabbitMQ 4, SeaweedFS compatible con S3) y las migraciones Flyway `V1__init_erp_schema.sql` y `V2__seed_bolivia_data.sql` (con datos realistas de Santa Cruz de la Sierra, Bolivia, en Bolivianos `Bs`).

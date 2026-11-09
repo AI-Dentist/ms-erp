@@ -36,7 +36,7 @@ public class SpringAiSqlGeneratorAdapter implements SqlGeneratorPort {
     private final String apiKey;
 
     public SpringAiSqlGeneratorAdapter(ChatClient.Builder builder,
-                                       @Value("${spring.ai.openai.api-key:}") String apiKey) {
+                                       @Value("${spring.ai.openai.chat.api-key:}") String apiKey) {
         this.client = builder.build();
         this.apiKey = apiKey;
     }
@@ -46,7 +46,7 @@ public class SpringAiSqlGeneratorAdapter implements SqlGeneratorPort {
         if (question == null || question.isBlank() || question.length() > 500) {
             throw new BusinessRuleException("La pregunta debe tener entre 1 y 500 caracteres");
         }
-        if (apiKey.isBlank() || apiKey.equals("not-configured")) {
+        if (apiKey.isBlank() || apiKey.trim().equals("not-configured") || apiKey.trim().startsWith("PEGAR_AQUI_")) {
             throw new BusinessRuleException("Reportes IA no disponibles: configure el proveedor");
         }
         try {
