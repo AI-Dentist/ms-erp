@@ -7,7 +7,8 @@ import org.springframework.core.env.Profiles;
 /**
  * Fail-closed startup guard for the local X-Dev-User mode: refuses to start when the mode is enabled outside the
  * {@code local} profile or next to the legacy {@code erp.security.dev-mode}, and when {@code local} is combined
- * with a production profile (enabled or not).
+ * or {@code dev} is combined with a production profile (enabled or not). Legacy dev mode is also forbidden
+ * in production.
  */
 public class LocalDevAuthGuard implements InitializingBean {
 
@@ -26,8 +27,15 @@ public class LocalDevAuthGuard implements InitializingBean {
     @Override
     public void afterPropertiesSet() {
         boolean local = environment.acceptsProfiles(Profiles.of("local"));
-        if (local && environment.acceptsProfiles(PRODUCTION)) {
+        boolean production = environment.acceptsProfiles(PRODUCTION);
+        if (production && local) {
             throw new IllegalStateException("The local profile must never be combined with a production profile");
+        }
+        if (production && environment.acceptsProfiles(Profiles.of("dev"))) {
+            throw new IllegalStateException("The dev profile must never be combined with a production profile");
+        }
+        if (production && legacyDevMode) {
+            throw new IllegalStateException("erp.security.dev-mode=true must never be enabled in production");
         }
         if (localDevUserEnabled && !local) {
             throw new IllegalStateException("erp.security.local-dev-user.enabled requires the local profile");
