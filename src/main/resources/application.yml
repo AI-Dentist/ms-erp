@@ -102,8 +102,9 @@ erp:
     base-url: ${PAGOFACIL_BASE_URL:https://masterqr.pagofacil.com.bo/api/services/v2}
     token-service: ${PAGOFACIL_TOKEN_SERVICE:}
     token-secret: ${PAGOFACIL_TOKEN_SECRET:}
+    payment-method-id: ${PAGOFACIL_PAYMENT_METHOD_ID:0}
     callback-url: ${PAGOFACIL_CALLBACK_URL:http://localhost:8081/api/v1/webhooks/pagofacil}
-    # LOCAL MOCK ONLY: X-Local-Mock-Secret; no production PagoFacil protocol is implemented.
+    # LOCAL MOCK ONLY: X-Local-Mock-Secret; real callbacks use authenticated provider query.
     # Blank and change-me are rejected, including callback retries. See PagoFacilWebhookController.
     webhook-secret: ${PAGOFACIL_WEBHOOK_SECRET:}
     dev-simulation-enabled: false

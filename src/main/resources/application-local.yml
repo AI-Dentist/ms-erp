@@ -35,10 +35,10 @@ erp:
       # always wins over X-Dev-User (the header is then ignored).
       jwt-issuer-uri: ${ERP_LOCAL_JWT_ISSUER_URI:http://localhost:8180/realms/dental-platform}
   pagofacil:
-    # LOCAL MOCK: no PagoFacil credentials. Simulation is also gated on profile dev|local in the controller.
-    mock-enabled: true
+    # Mock by default; live HTTP requires explicit opt-in AND both external provider tokens.
+    mock-enabled: ${PAGOFACIL_MOCK_ENABLED:true}
     dev-simulation-enabled: true
-    callback-url: http://localhost:${ERP_PORT:8080}/api/v1/webhooks/pagofacil
+    callback-url: ${PAGOFACIL_CALLBACK_URL:http://localhost:${ERP_PORT:8080}/api/v1/webhooks/pagofacil}
     webhook-secret: ${PAGOFACIL_WEBHOOK_SECRET:local-only-pagofacil-mock-secret}
   n8n:
     enabled: ${N8N_ENABLED:false}

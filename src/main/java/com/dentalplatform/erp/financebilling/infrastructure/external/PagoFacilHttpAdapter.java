@@ -13,12 +13,41 @@ import java.io.IOException;
 import java.util.Base64;
 import java.util.UUID;
 
-/** No HTTP provider protocol is implemented. The image is deliberately NOT a scannable payment QR. */
+/** Explicit mock mode retains the non-scannable image; configured live mode uses QR Master v1.1.0. */
 @Component
 public class PagoFacilHttpAdapter implements PagoFacilGatewayPort {
     private final boolean mock;
+    private final PagoFacilMasterQrClient client;
+    private final boolean configured;
 
-    public PagoFacilHttpAdapter(@Value("${erp.pagofacil.mock-enabled:true}") boolean mock) { this.mock = mock; }
+    /** Compatibility constructor: no credential-bearing integration is implicitly enabled. */
+    public PagoFacilHttpAdapter(boolean mock) { this(mock, "", "", "", 0, "", java.time.Clock.systemUTC()); }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PagoFacilHttpAdapter(@Value("${erp.pagofacil.mock-enabled:true}") boolean mock,
+            @Value("${erp.pagofacil.base-url:https://masterqr.pagofacil.com.bo/api/services/v2}") String base,
+            @Value("${erp.pagofacil.token-service:}") String service,
+            @Value("${erp.pagofacil.token-secret:}") String secret,
+            @Value("${erp.pagofacil.payment-method-id:0}") int method,
+            @Value("${erp.pagofacil.callback-url:}") String callback, java.time.Clock clock) {
+        this.mock = mock;
+        this.configured = !service.isBlank() && !secret.isBlank();
+        this.client = new PagoFacilMasterQrClient(base, service, secret, method, callback, clock);
+    }
+
+    @Override public boolean esMock() { return mock; }
+    @Override public void exigirDisponible() {
+        if (!mock && !configured) { throw new UnsupportedPagoFacilIntegrationException(); }
+    }
+    @Override public QrGenerado generar(SolicitudQr request) {
+        exigirDisponible();
+        return mock ? PagoFacilGatewayPort.super.generar(request) : client.generar(request);
+    }
+    @Override public ConsultaTransaccion consultarTransaccion(String reference) {
+        exigirDisponible();
+        if (mock) { throw new UnsupportedPagoFacilIntegrationException(); }
+        return client.consultar(reference);
+    }
 
     public void exigirMock() {
         if (!mock) { throw new UnsupportedPagoFacilIntegrationException(); }
