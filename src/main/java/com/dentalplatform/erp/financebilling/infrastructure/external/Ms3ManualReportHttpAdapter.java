@@ -151,7 +151,8 @@ public class Ms3ManualReportHttpAdapter implements Ms3ManualReportPort {
             nullableText(row, "unidad");
         } else {
             requireText(row, "citaId", "pacienteId", "odontologoId", "fechaHora", "estado");
-            requireNumbers(row, "duracionMin");
+            JsonNode duration = row.path("duracionMin");
+            if (!duration.isNull() && !duration.isNumber()) { throw new NoDisponible(); }
             nullableText(row, "consultorioId", "tipoTratamiento", "reservadaEn", "nivelRiesgo");
             JsonNode risk = row.path("probabilidadNoShow");
             if (!risk.isMissingNode() && !risk.isNull() && !risk.isNumber()) { throw new NoDisponible(); }

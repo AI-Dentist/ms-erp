@@ -523,6 +523,50 @@ class ManualReportMs3GraphQLTest extends IntegrationTestBase {
     }
 
     @Test
+    void nullableDurationAndUnavailableMlReturnActualRow() {
+        stubResponseBody.set(appointmentWithDuration("null"));
+        asAdminJwt("admin-sub", "admin-ms3", "jwt-duration-null", () -> {
+            var response = executeGenerate(Map.of("entidad", "citas", "columnas",
+                    List.of("citaId", "duracionMin", "probabilidadNoShow", "nivelRiesgo")));
+            response.path("generarReporteManual.filas").entityList(List.class).satisfies(rows -> {
+                assertThat(rows).hasSize(1);
+                assertThat(rows.getFirst()).containsExactly("CITA-DURATION", null, null, null);
+            });
+            response.path("generarReporteManual.filasJson").entity(String.class)
+                    .isEqualTo("[[\"CITA-DURATION\",null,null,null]]");
+            return null;
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"30\"", "true", "{}", "[]"})
+    void invalidDurationTypesRemainServiceUnavailable(String duration) {
+        stubResponseBody.set(appointmentWithDuration(duration));
+        asAdminJwt("admin-sub", "admin-ms3", "jwt-duration-invalid", () -> {
+            var response = executeGenerate(Map.of("entidad", "citas", "columnas",
+                    List.of("citaId", "duracionMin", "probabilidadNoShow", "nivelRiesgo")));
+            response.errors().satisfy(errors -> {
+                assertThat(errors).hasSize(1);
+                assertThat(errors.getFirst().getErrorType().toString()).isEqualTo("SERVICE_UNAVAILABLE");
+                assertThat(errors.getFirst().getMessage())
+                        .isEqualTo("SERVICE_UNAVAILABLE: No se pudo obtener el reporte de MS3");
+            });
+            response.path("generarReporteManual").pathDoesNotExist();
+            return null;
+        });
+    }
+
+    private static String appointmentWithDuration(String duration) {
+        return """
+                {"success":true,"data":{"entidad":"citas","total":1,"columnas":[],"filas":[{
+                  "citaId":"CITA-DURATION","pacienteId":"60000000-0000-0000-0000-000000000001",
+                  "odontologoId":"50000000-0000-0000-0000-000000000001","consultorioId":null,
+                  "fechaHora":"2026-03-05 10:00","duracionMin":%s,"estado":"RESERVADA",
+                  "tipoTratamiento":null,"reservadaEn":null,"probabilidadNoShow":null,"nivelRiesgo":null}]}}
+                """.formatted(duration);
+    }
+
+    @Test
     void ms3MalformedResponseProducesServiceUnavailable() {
         // total says 10, but filas has only 2 (less than expected min(total, 500))
         String malformedJson = """
