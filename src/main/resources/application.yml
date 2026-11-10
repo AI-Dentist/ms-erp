@@ -127,6 +127,10 @@ erp:
     webhook-secret: ${N8N_WEBHOOK_SECRET:}
     connect-timeout-ms: 1000
     read-timeout-ms: 2000
+  ms3:
+    reports-base-url: ${ERP_MS3_REPORTS_BASE_URL:https://20-83-242-208.sslip.io/api/agendamiento}
+    connect-timeout-ms: ${ERP_MS3_REPORTS_CONNECT_TIMEOUT_MS:1000}
+    read-timeout-ms: ${ERP_MS3_REPORTS_READ_TIMEOUT_MS:3000}
   receipts:
     # Explicit development default. Deployments select s3 (alias: minio); never falls back on failure.
     # Private bucket provisioning and scoped credentials: docs/s3-receipts.md.
