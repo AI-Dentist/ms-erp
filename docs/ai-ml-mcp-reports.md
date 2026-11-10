@@ -1,6 +1,6 @@
 # Agent reports and authenticated automation
 
-Existing GraphQL names and export URLs remain supported. This extension adds report fields, streamed downloads and authenticated n8n delivery without changing offline synchronization or idempotency.
+Existing GraphQL names and export URLs remain supported. This extension adds report fields, streamed downloads and authenticated n8n webhook integration without changing offline synchronization or idempotency.
 
 ## Reports
 

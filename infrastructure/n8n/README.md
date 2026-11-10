@@ -8,7 +8,7 @@ Import `n8n-workflow-multicanal.json` into n8n, configure credentials, then acti
 4. Select **Clinic Gmail SMTP** credentials, configure the account's supported SMTP/app-password policy, and set `GMAIL_FROM_ADDRESS`. No password or token belongs in this repository.
 5. Activate the workflow and set MS1 `N8N_ENABLED=true` and `N8N_WEBHOOK_URL=http://localhost:5678/webhook/erp-notificaciones` (use a trusted reachable hostname when containers are separate).
 
-The authenticated webhook receives the S17 nested payload, normalizes it and escapes Markdown/HTML data. A gate per channel either calls its provider or emits a skipped result. Two append joins wait for all branches; the final response excludes skipped channels and returns 200 only if every active branch succeeded (502 on provider failure). A 200 means webhook/provider acceptance, not a read receipt.
+The authenticated webhook receives the S17 nested payload, normalizes it and escapes Markdown/HTML data. A gate per channel either calls its provider or emits a skipped result. Two append joins wait for all branches; the final response excludes skipped channels and returns 200 only if every active branch succeeded (502 on provider failure). For this workflow a 200 reflects its active branches' provider-success responses, not recipient delivery or a read receipt. MS1 discards the response body and accepts any 2xx from the configured webhook; another webhook need not run this workflow or confirm provider acceptance.
 
 Success/error/manual execution-data retention is disabled in this export to avoid persisting contact/financial payloads. Keep that policy aligned with clinic privacy requirements. MS1 logs redacted fallback events, never full patient payloads or credentials.
 

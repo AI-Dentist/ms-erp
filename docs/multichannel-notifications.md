@@ -29,9 +29,9 @@ Each POST carries `tipoEvento=NOTIFICACION_COBRANZA_MULTICANAL`, `canalesActivos
 | --- | --- | --- | --- |
 | Authenticated configured n8n returns 2xx | true | N8N_LIVE | ENVIADO |
 | Network failure/timeout or disabled/unconfigured transport in dev/local only | true | SIMULADO_SIN_N8N | SIMULADO_OK |
-| prod/production/default without available transport, or HTTP/configuration rejection in any profile | false | NO_ENVIADO | NO_ENVIADO |
+| prod/production/default or unknown profile with disabled/blank or unavailable transport; HTTP rejection or other runtime failure after attempting transport in any profile | false | NO_ENVIADO | NO_ENVIADO |
 
-A prod/production profile always prevents simulation, even alongside local/dev. Simulation is explicitly **not a delivery confirmation** (a timed-out webhook may still finish remotely; do not automatically retry it) and never sets `notificacionN8nEnviada=true`. Errors log only the mode, validated channel names, failure class and a payload with recipient, financial detail and message redacted; credentials and patient/contact text are never logged. A 2xx response is webhook acceptance, not proof of final recipient delivery or read status.
+A prod/production profile always prevents simulation, even alongside local/dev. Simulation is explicitly **not a delivery confirmation** (a timed-out webhook may still finish remotely; do not automatically retry it) and never sets `notificacionN8nEnviada=true`. Errors log only the mode, validated channel names, failure class and a payload with recipient, financial detail and message redacted; credentials and patient/contact text are never logged. The adapter discards the response body: any configured webhook's 2xx is acceptance only, not proof of provider acceptance, recipient delivery or read status. For this explicit-data route, `notificacionN8nEnviada=true` requires `exito` and `N8N_LIVE` and has the same limited meaning.
 
 Providers are `META_CLOUD_TEST_NUMBER`, `TELEGRAM_BOT_API` and `GMAIL_SMTP`. Destinations are the supplied phone, chat ID (or `Chat Clínica`) and email respectively.
 
@@ -45,7 +45,7 @@ The deterministic dev/local fallback recognizes **Notificar cobro pendiente por 
 
 Import `infrastructure/n8n/n8n-workflow-multicanal.json` (inactive by default), select/configure its Header Auth, Telegram bot and Gmail SMTP credentials, and set `META_PHONE_NUMBER_ID`, `META_ACCESS_TOKEN`, `CHAT_ID` and `GMAIL_FROM_ADDRESS` in n8n. Header Auth must check `X-ERP-Webhook-Secret` against the same secret configured in MS1. No real credential value is committed.
 
-Activate the workflow to use production path `POST /webhook/erp-notificaciones` (not `/webhook-test`). Branches gate on active channels; WhatsApp uses the requested v20.0 Meta endpoint, Telegram sends escaped Markdown, and Gmail sends escaped HTML with subject Aviso de Cobranza - Clínica Dental. Join all branches before responding; provider failures must not be confirmed as successful delivery. Workflow execution-data retention is disabled by default to avoid storing recipient payloads.
+Activate the workflow to use production path `POST /webhook/erp-notificaciones` (not `/webhook-test`). Branches gate on active channels; WhatsApp uses the requested v20.0 Meta endpoint, Telegram sends escaped Markdown, and Gmail sends escaped HTML with subject Aviso de Cobranza - Clínica Dental. This workflow joins all branches and responds 200 when all active branches report provider success, or 502 on a reported provider failure. Even provider acceptance does not establish channel delivery or read status; a different configured webhook may implement different semantics. Workflow execution-data retention is disabled by default to avoid storing recipient payloads.
 
 Verification without provider credentials: `./mvnw -q -o -Dtest=MultichannelNotificationHttpTest,MultichannelExecutionPolicyTest,MultichannelWorkflowContractTest test` and `node scripts/verify-n8n-workflow.mjs`. The Node check exercises committed Code-node logic with synthetic inputs; it is not a live n8n import or provider smoke test.
 
