@@ -206,6 +206,20 @@ abstract class JwtAudienceSecurityTest {
         assertThat(denied.body()).contains("FORBIDDEN");
     }
 
+    @Test
+    void financialKpisRequiresAdminAndDeniesOtherRoles() throws Exception {
+        String query = "{ obtenerKpisFinancieros(fechaInicio: \"2026-01-01T00:00:00Z\", fechaFin: \"2026-01-31T23:59:59Z\") { fechaInicio fechaFin ingresos { totalBs } } }";
+        var anonymous = graphql(port, query, Map.of());
+        assertThat(anonymous.statusCode()).isEqualTo(401);
+        JsonNode data = success(query, token("\"" + EXPECTED + "\"", "ADMIN"));
+        assertThat(data.path("obtenerKpisFinancieros").path("ingresos")).isNotNull();
+        for (String role : List.of("CAJERO", "RECEPCIONISTA", "ODONTOLOGO")) {
+            var denied = graphql(port, query, bearer(token("\"" + EXPECTED + "\"", role)));
+            assertThat(denied.statusCode()).isEqualTo(200);
+            assertThat(denied.body()).contains("FORBIDDEN");
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"issuer", "signature", "expiry"})
     void expectedAudienceDoesNotBypassExistingJwtValidation(String invalid) throws Exception {
