@@ -72,6 +72,76 @@ type JornadaOffline {
   credencial: String!
 }
 
+type KpiCobranzaMetodo {
+  cantidad: Int!
+  metodoPago: MetodoPago!
+  montoBs: BigDecimal!
+  montoNominal: Boolean!
+  porcentajeMonto: Float!
+}
+
+type KpiCuotaVencida {
+  cuotaId: UUID!
+  diasAtraso: Int!
+  fechaVencimiento: Date!
+  montoBs: BigDecimal!
+  numeroCuota: Int!
+  ordenCobroId: UUID!
+  pacienteId: UUID!
+  pacienteNombre: String!
+}
+
+type KpiFlujoCaja {
+  saldoNetoBs: BigDecimal!
+  seriePorDia: [KpiFlujoDia!]!
+  totalEgresosBs: BigDecimal!
+  totalIngresosBs: BigDecimal!
+}
+
+type KpiFlujoDia {
+  egresosBs: BigDecimal!
+  fecha: Date!
+  ingresosBs: BigDecimal!
+  saldoBs: BigDecimal!
+}
+
+type KpiIngresos {
+  cantidadMovimientos: Int!
+  montoNominalQrBs: BigDecimal!
+  seriePorDia: [KpiSerieDia!]!
+  totalBs: BigDecimal!
+}
+
+type KpiMorosidad {
+  cuotasExigibles: Int!
+  cuotasVencidas: Int!
+  detalle: [KpiCuotaVencida!]!
+  montoVencidoBs: BigDecimal!
+  porcentaje: Float!
+}
+
+type KpiSerieDia {
+  fecha: Date!
+  montoBs: BigDecimal!
+}
+
+type KpiServicioRanking {
+  cantidad: Int!
+  montoBs: BigDecimal!
+  nombre: String!
+  servicioId: UUID!
+}
+
+type KpisFinancieros {
+  cobranzaPorMetodo: [KpiCobranzaMetodo!]!
+  fechaFin: DateTime!
+  fechaInicio: DateTime!
+  flujoCaja: KpiFlujoCaja!
+  ingresos: KpiIngresos!
+  morosidad: KpiMorosidad!
+  serviciosMasSolicitados: [KpiServicioRanking!]!
+}
+
 type McpServerStatus {
   activo: Boolean!
   protocolVersion: String!
@@ -253,6 +323,7 @@ type Query {
   obtenerEstadoServidorMcp: McpServerStatus!
   obtenerFlujoCaja(fechaFin: DateTime!, fechaInicio: DateTime!): ResumenFlujoCaja!
   obtenerGastoPagadoPaciente(pacienteId: UUID!): GastoPagadoPaciente!
+  obtenerKpisFinancieros(fechaFin: DateTime!, fechaInicio: DateTime!): KpisFinancieros!
   " Canonical identity from the verified JWT subject, never a caller-supplied identifier."
   obtenerMiOdontologoId: UUID!
   " ADMIN/CAJERO: exact verified JWT subject -> active ERP user, without a doctor dependency."

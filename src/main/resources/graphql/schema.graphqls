@@ -26,6 +26,7 @@ type Query {
     obtenerOrdenCobroDetalle(id: UUID!): OrdenCobro
     listarCuotasPendientesPorPaciente(pacienteId: UUID!): [CuotaPago!]!
     obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!): ResumenFlujoCaja!
+    obtenerKpisFinancieros(fechaInicio: DateTime!, fechaFin: DateTime!): KpisFinancieros!
 }
 
 input ActivarJornadaOfflineInput {
@@ -281,6 +282,76 @@ type ResumenFlujoCaja {
     totalEgresosBs: BigDecimal!
     saldoNetoBs: BigDecimal!
     movimientos: [MovimientoCaja!]!
+}
+
+type KpisFinancieros {
+    fechaInicio: DateTime!
+    fechaFin: DateTime!
+    ingresos: KpiIngresos!
+    morosidad: KpiMorosidad!
+    serviciosMasSolicitados: [KpiServicioRanking!]!
+    flujoCaja: KpiFlujoCaja!
+    cobranzaPorMetodo: [KpiCobranzaMetodo!]!
+}
+
+type KpiSerieDia {
+    fecha: Date!
+    montoBs: BigDecimal!
+}
+
+type KpiIngresos {
+    totalBs: BigDecimal!
+    cantidadMovimientos: Int!
+    montoNominalQrBs: BigDecimal!
+    seriePorDia: [KpiSerieDia!]!
+}
+
+type KpiMorosidad {
+    cuotasVencidas: Int!
+    cuotasExigibles: Int!
+    porcentaje: Float!
+    montoVencidoBs: BigDecimal!
+    detalle: [KpiCuotaVencida!]!
+}
+
+type KpiCuotaVencida {
+    cuotaId: UUID!
+    ordenCobroId: UUID!
+    pacienteId: UUID!
+    pacienteNombre: String!
+    numeroCuota: Int!
+    montoBs: BigDecimal!
+    fechaVencimiento: Date!
+    diasAtraso: Int!
+}
+
+type KpiServicioRanking {
+    servicioId: UUID!
+    nombre: String!
+    cantidad: Int!
+    montoBs: BigDecimal!
+}
+
+type KpiFlujoDia {
+    fecha: Date!
+    ingresosBs: BigDecimal!
+    egresosBs: BigDecimal!
+    saldoBs: BigDecimal!
+}
+
+type KpiFlujoCaja {
+    totalIngresosBs: BigDecimal!
+    totalEgresosBs: BigDecimal!
+    saldoNetoBs: BigDecimal!
+    seriePorDia: [KpiFlujoDia!]!
+}
+
+type KpiCobranzaMetodo {
+    metodoPago: MetodoPago!
+    cantidad: Int!
+    montoBs: BigDecimal!
+    porcentajeMonto: Float!
+    montoNominal: Boolean!
 }
 
 input EmpresaConfigInput {
