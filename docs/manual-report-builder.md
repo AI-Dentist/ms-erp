@@ -10,6 +10,37 @@ The manual report builder allows administrators to query tabular operational and
 4. **Caller Bearer Token Forwarding**: For MS3 entities (`citas`, `insumos`), MS1 calls the MS3 REST endpoint forwarding the caller's validated JWT Bearer token. No service credentials or authentication bypasses are used. If the caller lacks a valid JWT, the operation fails immediately.
 5. **Fail-Closed Integration**: If MS3 is unreachable, unauthorized (401/403), returns an HTTP error, returns a malformed envelope, or references catalog identities (patients, dentists, consultorios) that cannot be resolved in MS1, MS1 fails closed with a GraphQL `SERVICE_UNAVAILABLE` error. No partial data is returned and nothing is stored in `ReportStore`.
 
+## MS3 Payload Validation
+
+Before caching, MS1 requires the response `data.entidad` to match the requested entity,
+`total` to be a nonnegative integer representable as a Java `long`, and the row count
+to be between `min(total, 500)` and `total`. Each row must be an object with the
+S3 entity's required identifiers, text, numeric and boolean fields in their original types.
+Missing required fields, nested objects in scalar fields and numeric strings are malformed.
+Optional/nullable fields remain nullable, including inventory `unidad`, appointment
+`consultorioId`, `tipoTratamiento`, `reservadaEn`, and unavailable ML risk values.
+Stock quantities remain numeric, including decimals; no display-string coercion is used for validation.
+
+Malformed responses return the existing exact error
+`SERVICE_UNAVAILABLE: No se pudo obtener el reporte de MS3`, with classification
+`SERVICE_UNAVAILABLE`, no report payload and no cache insertion. Regression tests fill
+all 64 cache slots through GraphQL and compare the oldest report's exported workbook
+cells before/after rejection: an unintended insertion would evict that report.
+
+### Correction Evidence — S2/S4
+
+Against candidate `10bee36`, the GraphQL regressions reproduced all three defects:
+empty row accepted, wrong entity accepted, fractional total classified as `INTERNAL_ERROR`.
+
+- RED: `./mvnw -q -o "-Dtest=ManualReportMs3GraphQLTest#malformedEntityRowsAndTotalNeverStoreReports" -Dsurefire.failIfNoSpecifiedTests=true test`
+  — exit **1**, 3 tests, 3 failures, 0 errors/skips (`target/report-builder-correction-red.log`).
+- GREEN: `./mvnw -q -o "-Dtest=ManualReportLocalGraphQLTest,ManualReportMs3GraphQLTest" -Dsurefire.failIfNoSpecifiedTests=true test`
+  — exit **0**, **32 tests** (10 local + 22 MS3), 0 failures/errors/skips (`target/report-builder-correction-green.log`).
+- Self-review: only MS3 payload validation, public GraphQL/export regressions and this document changed;
+  no authentication, accounting, offline, shared API or dependency changes. `git diff --check` passed.
+- Rollback boundary: this correction's adapter validation, accompanying tests and documentation only.
+  Full-suite rerun and parent acceptance are not claimed; no push or deployment is part of this batch.
+
 ## Supported Entities
 
 | Entity Key | Display Name | Origin | Description & Key Columns | Date Filter | Status Filter |

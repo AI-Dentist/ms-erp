@@ -7,6 +7,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.graphql.test.tester.GraphQlTester;
@@ -356,6 +358,8 @@ class ManualReportMs3GraphQLTest extends IntegrationTestBase {
 
     @Test
     void ms3HttpErrorProducesServiceUnavailableAndStoresNothing() throws Exception {
+        String sentinel = fillReportCache();
+        var before = exportedCells(sentinel);
         lastStatusCode.set(503);
         stubResponseBody.set("{\"error\":\"upstream failure\"}");
 
@@ -375,9 +379,147 @@ class ManualReportMs3GraphQLTest extends IntegrationTestBase {
             return null;
         });
 
-        // Ensure nothing stored in ReportStore
-        mvc.perform(get("/api/v1/reports/export/" + UUID.randomUUID() + "/xlsx").with(user("admin-ms3").roles("ADMIN")))
-                .andExpect(status().isNotFound());
+        assertThat(exportedCells(sentinel)).isEqualTo(before);
+    }
+
+    @ParameterizedTest(name = "reject malformed MS3 payload: {0}")
+    @ValueSource(strings = {"empty-row", "wrong-entity", "fractional-total"})
+    void malformedEntityRowsAndTotalNeverStoreReports(String defect) throws Exception {
+        String sentinel = fillReportCache();
+        var before = exportedCells(sentinel);
+        String body = validInsumoEnvelope();
+        body = switch (defect) {
+            case "empty-row" -> """
+                    {"success":true,"data":{"entidad":"insumos","columnas":[],"total":1,"filas":[{}]}}
+                    """;
+            case "wrong-entity" -> body.replace("\"entidad\":\"insumos\"", "\"entidad\":\"citas\"");
+            case "fractional-total" -> body.replace("\"total\":1", "\"total\":1.5");
+            default -> throw new AssertionError(defect);
+        };
+        stubResponseBody.set(body);
+        asAdminJwt("admin-sub", "admin-ms3", "jwt-malformed", () -> {
+            var response = executeGenerate(Map.of("entidad", "insumos", "columnas", List.of("insumoId", "nombre")));
+            response.errors().satisfy(errors -> {
+                assertThat(errors).hasSize(1);
+                assertThat(errors.getFirst().getErrorType().toString()).isEqualTo("SERVICE_UNAVAILABLE");
+                assertThat(errors.getFirst().getMessage())
+                        .isEqualTo("SERVICE_UNAVAILABLE: No se pudo obtener el reporte de MS3");
+            });
+            response.path("generarReporteManual").pathDoesNotExist();
+            return null;
+        });
+        // The oldest of 64 real reports must survive: even one unintended put would evict it.
+        assertThat(exportedCells(sentinel)).isEqualTo(before);
+    }
+
+    private static String validInsumoEnvelope() {
+        return """
+                {"success":true,"data":{"entidad":"insumos","columnas":[],"total":1,"filas":[
+                  {"insumoId":"INS-1","nombre":"Synthetic","unidad":null,"stockActual":1.25,
+                   "stockMinimo":2,"bajoMinimo":true,"salidasPeriodo":0}]}}
+                """;
+    }
+
+    private String fillReportCache() {
+        return asAdminJwt("admin-sub", "admin-ms3", "jwt-sentinel", () -> {
+            String oldest = null;
+            for (int i = 0; i < 64; i++) {
+                String id = executeGenerate(Map.of("entidad", "servicios", "columnas", List.of("codigo", "nombre")))
+                        .path("generarReporteManual.reporteId").entity(String.class).get();
+                if (oldest == null) oldest = id;
+            }
+            return oldest;
+        });
+    }
+
+    private List<List<String>> exportedCells(String reportId) throws Exception {
+        byte[] bytes = mvc.perform(get("/api/v1/reports/export/" + reportId + "/xlsx")
+                        .with(user("admin-ms3").roles("ADMIN")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            var result = new ArrayList<List<String>>();
+            for (var row : workbook.getSheetAt(0)) {
+                var cells = new ArrayList<String>();
+                for (var cell : row) cells.add(cell.toString());
+                result.add(cells);
+            }
+            return result;
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-entity", "overflow-total", "negative-total", "string-total",
+            "excess-rows", "missing-name", "object-name", "string-stock", "null-stock", "array-row"})
+    void malformedRowAndTotalBoundariesFailClosed(String defect) {
+        String body = validInsumoEnvelope();
+        body = switch (defect) {
+            case "missing-entity" -> body.replace("\"entidad\":\"insumos\",", "");
+            case "overflow-total" -> body.replace("\"total\":1", "\"total\":9223372036854775808");
+            case "negative-total" -> body.replace("\"total\":1", "\"total\":-1");
+            case "string-total" -> body.replace("\"total\":1", "\"total\":\"1\"");
+            case "excess-rows" -> body.replace("\"total\":1", "\"total\":0");
+            case "missing-name" -> body.replace("\"nombre\":\"Synthetic\",", "");
+            case "object-name" -> body.replace("\"nombre\":\"Synthetic\"", "\"nombre\":{}");
+            case "string-stock" -> body.replace("\"stockActual\":1.25", "\"stockActual\":\"1.25\"");
+            case "null-stock" -> body.replace("\"stockActual\":1.25", "\"stockActual\":null");
+            case "array-row" -> """
+                    {"success":true,"data":{"entidad":"insumos","total":1,"filas":[[]]}}
+                    """;
+            default -> throw new AssertionError(defect);
+        };
+        stubResponseBody.set(body);
+        asAdminJwt("admin-sub", "admin-ms3", "jwt-boundary", () -> {
+            var response = executeGenerate(Map.of("entidad", "insumos", "columnas", List.of("insumoId", "nombre")));
+            response.errors().satisfy(errors -> {
+                assertThat(errors).hasSize(1);
+                assertThat(errors.getFirst().getErrorType().toString()).isEqualTo("SERVICE_UNAVAILABLE");
+                assertThat(errors.getFirst().getMessage())
+                        .isEqualTo("SERVICE_UNAVAILABLE: No se pudo obtener el reporte de MS3");
+            });
+            response.path("generarReporteManual").pathDoesNotExist();
+            return null;
+        });
+    }
+
+    @Test
+    void nullableUnitAndDecimalStockRemainExportableAsNumbers() throws Exception {
+        stubResponseBody.set(validInsumoEnvelope());
+        String id = asAdminJwt("admin-sub", "admin-ms3", "jwt-nullable", () -> {
+            var response = executeGenerate(Map.of("entidad", "insumos",
+                    "columnas", List.of("insumoId", "unidad", "stockActual", "stockMinimo", "salidasPeriodo")));
+            response.path("generarReporteManual.filas").entityList(List.class)
+                    .satisfies(rows -> assertThat(rows.getFirst()).containsExactly("INS-1", null, "1.25", "2", "0"));
+            return response.path("generarReporteManual.reporteId").entity(String.class).get();
+        });
+        byte[] bytes = mvc.perform(get("/api/v1/reports/export/" + id + "/xlsx")
+                        .with(user("admin-ms3").roles("ADMIN")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            var row = workbook.getSheetAt(0).getRow(11);
+            assertThat(row.getCell(2).getCellType()).isEqualTo(org.apache.poi.ss.usermodel.CellType.NUMERIC);
+            assertThat(row.getCell(2).getNumericCellValue()).isEqualTo(1.25);
+            assertThat(row.getCell(3).getNumericCellValue()).isEqualTo(2);
+            assertThat(row.getCell(4).getNumericCellValue()).isZero();
+        }
+    }
+
+    @Test
+    void unavailableMlAndNullableAppointmentFieldsRemainNull() {
+        stubResponseBody.set("""
+                {"success":true,"data":{"entidad":"citas","total":1,"columnas":[],"filas":[{
+                  "citaId":"CITA-NULL","pacienteId":"60000000-0000-0000-0000-000000000001",
+                  "odontologoId":"50000000-0000-0000-0000-000000000001","consultorioId":null,
+                  "fechaHora":"2026-03-05 10:00","duracionMin":30,"estado":"RESERVADA",
+                  "tipoTratamiento":null,"reservadaEn":null,"probabilidadNoShow":null,"nivelRiesgo":null}]}}
+                """);
+        asAdminJwt("admin-sub", "admin-ms3", "jwt-ml-null", () -> {
+            executeGenerate(Map.of("entidad", "citas", "columnas",
+                            List.of("citaId", "consultorioNombre", "tipoTratamiento", "reservadaEn",
+                                    "probabilidadNoShow", "nivelRiesgo")))
+                    .path("generarReporteManual.filas").entityList(List.class)
+                    .satisfies(rows -> assertThat(rows.getFirst()).containsExactly("CITA-NULL", null, null, null, null, null));
+            return null;
+        });
     }
 
     @Test

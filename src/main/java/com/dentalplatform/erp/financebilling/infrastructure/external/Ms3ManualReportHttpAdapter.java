@@ -107,11 +107,11 @@ public class Ms3ManualReportHttpAdapter implements Ms3ManualReportPort {
             throw new NoDisponible();
         }
         JsonNode data = root.path("data");
-        if (data.isMissingNode() || !data.isObject()) {
+        if (!data.isObject() || !entidad.equals(data.path("entidad").asText())) {
             throw new NoDisponible();
         }
         JsonNode totalNode = data.path("total");
-        if (!totalNode.isNumber() || totalNode.longValue() < 0) {
+        if (!totalNode.isIntegralNumber() || !totalNode.canConvertToLong() || totalNode.longValue() < 0) {
             throw new NoDisponible();
         }
         long total = totalNode.longValue();
@@ -121,15 +121,13 @@ public class Ms3ManualReportHttpAdapter implements Ms3ManualReportPort {
             throw new NoDisponible();
         }
         int expectedMin = (int) Math.min(total, (long) MAX_FILAS);
-        if (filasNode.size() < expectedMin) {
+        if (filasNode.size() < expectedMin || filasNode.size() > total) {
             throw new NoDisponible();
         }
 
         List<Map<String, Object>> rawRows = new ArrayList<>(filasNode.size());
         for (JsonNode rowNode : filasNode) {
-            if (!rowNode.isObject()) {
-                throw new NoDisponible();
-            }
+            validateRow(entidad, rowNode);
             Map<String, Object> map = new LinkedHashMap<>();
             rowNode.properties().forEach(entry -> map.put(entry.getKey(), value(entry.getValue())));
             rawRows.add(map);
@@ -141,6 +139,43 @@ public class Ms3ManualReportHttpAdapter implements Ms3ManualReportPort {
 
         List<Map<String, Object>> enriched = enrichCitas(rawRows);
         return new Resultado(enriched, total);
+    }
+
+    /** Validate fixed S3 row fields, not client-selected columns or display metadata. */
+    private static void validateRow(String entidad, JsonNode row) {
+        if (!row.isObject()) { throw new NoDisponible(); }
+        if ("insumos".equals(entidad)) {
+            requireText(row, "insumoId", "nombre");
+            requireNumbers(row, "stockActual", "stockMinimo", "salidasPeriodo");
+            if (!row.path("bajoMinimo").isBoolean()) { throw new NoDisponible(); }
+            nullableText(row, "unidad");
+        } else {
+            requireText(row, "citaId", "pacienteId", "odontologoId", "fechaHora", "estado");
+            requireNumbers(row, "duracionMin");
+            nullableText(row, "consultorioId", "tipoTratamiento", "reservadaEn", "nivelRiesgo");
+            JsonNode risk = row.path("probabilidadNoShow");
+            if (!risk.isMissingNode() && !risk.isNull() && !risk.isNumber()) { throw new NoDisponible(); }
+        }
+    }
+
+    private static void requireText(JsonNode row, String... keys) {
+        for (String key : keys) {
+            JsonNode value = row.path(key);
+            if (!value.isTextual() || value.asText().isBlank()) { throw new NoDisponible(); }
+        }
+    }
+
+    private static void requireNumbers(JsonNode row, String... keys) {
+        for (String key : keys) {
+            if (!row.path(key).isNumber()) { throw new NoDisponible(); }
+        }
+    }
+
+    private static void nullableText(JsonNode row, String... keys) {
+        for (String key : keys) {
+            JsonNode value = row.path(key);
+            if (!value.isMissingNode() && !value.isNull() && !value.isTextual()) { throw new NoDisponible(); }
+        }
     }
 
     private List<Map<String, Object>> enrichCitas(List<Map<String, Object>> rows) {
