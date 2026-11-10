@@ -7,8 +7,8 @@ Real transport is opt-in: set `PAGOFACIL_MOCK_ENABLED=false` and supply both pro
 | Variable | Default / meaning |
 | --- | --- |
 | `PAGOFACIL_BASE_URL` | `https://masterqr.pagofacil.com.bo/api/services/v2` |
-| `PAGOFACIL_TOKEN_SERVICE` | Empty; login `tcTokenService` header |
-| `PAGOFACIL_TOKEN_SECRET` | Empty; `tcTokenSecret` header for login and transaction queries |
+| `PAGOFACIL_TOKEN_SERVICE` | Empty; login `tctokenservice` header (sent lowercase, as the provider expects) |
+| `PAGOFACIL_TOKEN_SECRET` | Empty; `tctokensecret` header for login and transaction queries (sent lowercase) |
 | `PAGOFACIL_PAYMENT_METHOD_ID` | `0`; when <=0 discover the first enabled BOB QR service, otherwise first list entry; use and cache `34` if discovery fails or is empty |
 | `PAGOFACIL_CALLBACK_URL` | Blank, `localhost` or `127.0.0.1` host uses `https://masterqr.pagofacil.com.bo/callback/placeholder`; configure a reachable HTTPS URL for real callbacks |
 | `PAGOFACIL_MOCK_ENABLED` | `true`; explicit `false` is required even when tokens exist |

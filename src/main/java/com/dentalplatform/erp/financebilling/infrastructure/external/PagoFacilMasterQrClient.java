@@ -76,7 +76,7 @@ final class PagoFacilMasterQrClient {
         var body = new LinkedHashMap<String,Object>();
         body.put("pagofacilTransactionId", reference); body.put("companyTransactionId", reference);
         if (reference.matches("[0-9]+")) { body.put("tnTransaccionPF", new BigInteger(reference)); }
-        var values = post("/query-transaction", body, Map.of("Authorization", bearer(), "tcTokenSecret", secret));
+        var values = post("/query-transaction", body, Map.of("Authorization", bearer(), "tctokensecret", secret));
         if (values.isString()) {
             try { values = json.readTree(values.asString()); }
             catch (tools.jackson.core.JacksonException e) { throw failure(); }
@@ -94,7 +94,7 @@ final class PagoFacilMasterQrClient {
 
     private synchronized String bearer() {
         if (token == null || !clock.instant().isBefore(renewAt)) {
-            var values = post("/login", Map.of(), Map.of("tcTokenService", service, "tcTokenSecret", secret));
+            var values = post("/login", Map.of(), Map.of("tctokenservice", service, "tctokensecret", secret));
             String fresh = values.path("accessToken").asString("");
             try {
                 BigDecimal minutes = new BigDecimal(values.path("expiresInMinutes").asString(""));
