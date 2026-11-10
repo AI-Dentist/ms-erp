@@ -188,4 +188,4 @@ Las revisiones nativas exigidas por riesgo (corte público y exportaciones) apro
 
 ### Contrato GraphQL
 
-El SDL y la introspección canónicos están en `docs/graphql/`; `SchemaExportTest` los compara con el esquema de la aplicación sin regenerarlos por defecto. Consulte [el contrato comparado](docs/frontend-contract-diff.md), [los datos locales](docs/local-integration-data.md) y [la guía demográfica](docs/patient-demographic-readback.md).
+El SDL y la introspección canónicos están en `docs/graphql/`; `SchemaExportTest` los compara con el esquema de la aplicación sin regenerarlos por defecto. Consulte [el contrato comparado](docs/frontend-contract-diff.md), [los datos locales](docs/local-integration-data.md), [el generador de reportes manuales](docs/manual-report-builder.md) y [la guía demográfica](docs/patient-demographic-readback.md).

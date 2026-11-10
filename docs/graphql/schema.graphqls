@@ -24,6 +24,13 @@ type AuditLog {
   id: UUID!
 }
 
+"tipo: TEXTO | NUMERO | MONEDA_BS | FECHA | FECHA_HORA | BOOLEANO"
+type ColumnaReporte {
+  clave: String!
+  etiqueta: String!
+  tipo: String!
+}
+
 type Consultorio {
   codigo: String!
   estado: String!
@@ -50,6 +57,15 @@ type EmpresaConfig {
   nombreComercial: String!
   razonSocial: String!
   telefonoContacto: String!
+}
+
+type EntidadReporte {
+  clave: String!
+  columnas: [ColumnaReporte!]!
+  filtroFecha: Boolean!
+  filtrosEstado: [String!]!
+  nombre: String!
+  origen: String!
 }
 
 type Especialidad {
@@ -197,6 +213,7 @@ type Mutation {
   eliminarPaciente(id: UUID!): Boolean!
   eliminarServicioOdontologico(id: UUID!): Boolean!
   generarQrPagoFacil(ciNitCliente: String!, cuotaId: UUID!, razonSocialCliente: String!): TransaccionQr!
+  generarReporteManual(input: ReporteManualInput!): ReporteGenerativoPayload!
   prepararSyncOffline(input: PrepararSyncOfflineInput!): OfflineSyncChallenge!
   registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
   simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
@@ -311,6 +328,7 @@ type Query {
   listarAuditLogs(limite: Int = 50): [AuditLog!]!
   listarConsultorios: [Consultorio!]!
   listarCuotasPendientesPorPaciente(pacienteId: UUID!): [CuotaPago!]!
+  listarEntidadesReporte: [EntidadReporte!]!
   listarEspecialidades: [Especialidad!]!
   listarHistorialAgente(limite: Int = 20): [AgenteInteraccionResponse!]!
   listarOdontologos(soloActivos: Boolean = true): [Odontologo!]!
@@ -352,6 +370,8 @@ type ReporteGenerativoPayload {
   filas: [[String]]
   "Filas serializadas como JSON para compatibilidad hacia atrás"
   filasJson: String!
+  "true cuando el reporte manual superó 500 filas y se recortó; null en reportes del agente"
+  filasTruncadas: Boolean
   reporteId: UUID!
   "Resumen analítico generado a partir de los datos del reporte"
   resumenAnalitico: String!
@@ -696,6 +716,14 @@ input RegistrarEgresoInput {
   metodoPago: MetodoPago!
   montoBs: BigDecimal!
   usuarioCajeroId: UUID!
+}
+
+input ReporteManualInput {
+  columnas: [String!]!
+  entidad: String!
+  estado: String
+  fechaFin: DateTime
+  fechaInicio: DateTime
 }
 
 "ADMIN provisioning only; subject is opaque, case-sensitive, nonblank, at most 100 characters."
