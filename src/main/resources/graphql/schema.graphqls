@@ -27,6 +27,7 @@ type Query {
     listarCuotasPendientesPorPaciente(pacienteId: UUID!): [CuotaPago!]!
     obtenerFlujoCaja(fechaInicio: DateTime!, fechaFin: DateTime!): ResumenFlujoCaja!
     obtenerKpisFinancieros(fechaInicio: DateTime!, fechaFin: DateTime!): KpisFinancieros!
+    listarEntidadesReporte: [EntidadReporte!]!
 }
 
 input ActivarJornadaOfflineInput {
@@ -105,6 +106,7 @@ type Mutation {
     simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
 
     registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
+    generarReporteManual(input: ReporteManualInput!): ReporteGenerativoPayload!
 }
 
 enum ModalidadPago { CONTADO CREDITO }
@@ -594,6 +596,32 @@ type ReporteGenerativoPayload {
     filas: [[String]]
     "Resumen analítico generado a partir de los datos del reporte"
     resumenAnalitico: String!
+    "true cuando el reporte manual superó 500 filas y se recortó; null en reportes del agente"
+    filasTruncadas: Boolean
+}
+
+type EntidadReporte {
+    clave: String!
+    nombre: String!
+    origen: String!
+    columnas: [ColumnaReporte!]!
+    filtrosEstado: [String!]!
+    filtroFecha: Boolean!
+}
+
+"tipo: TEXTO | NUMERO | MONEDA_BS | FECHA | FECHA_HORA | BOOLEANO"
+type ColumnaReporte {
+    clave: String!
+    etiqueta: String!
+    tipo: String!
+}
+
+input ReporteManualInput {
+    entidad: String!
+    columnas: [String!]!
+    fechaInicio: DateTime
+    fechaFin: DateTime
+    estado: String
 }
 
 

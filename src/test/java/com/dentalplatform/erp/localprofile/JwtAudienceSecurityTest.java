@@ -207,6 +207,25 @@ abstract class JwtAudienceSecurityTest {
     }
 
     @Test
+    void manualReportsRequireAdminAndDenyOtherRoles() throws Exception {
+        String list = "{ listarEntidadesReporte { clave } }";
+        String generate = "mutation { generarReporteManual(input: {entidad: \"servicios\", columnas: [\"codigo\"]}) { reporteId filasTruncadas } }";
+        for (String query : List.of(list, generate)) {
+            assertThat(graphql(port, query, Map.of()).statusCode()).isEqualTo(401);
+        }
+        String admin = token("\"" + EXPECTED + "\"", "ADMIN");
+        assertThat(success(list, admin).path("listarEntidadesReporte").size()).isEqualTo(7);
+        assertThat(success(generate, admin).path("generarReporteManual").path("filasTruncadas").asBoolean(true)).isFalse();
+        for (String role : List.of("CAJERO", "RECEPCIONISTA", "ODONTOLOGO")) {
+            for (String query : List.of(list, generate)) {
+                var denied = graphql(port, query, bearer(token("\"" + EXPECTED + "\"", role)));
+                assertThat(denied.statusCode()).isEqualTo(200);
+                assertThat(denied.body()).contains("FORBIDDEN");
+            }
+        }
+    }
+
+    @Test
     void financialKpisRequiresAdminAndDeniesOtherRoles() throws Exception {
         String query = "{ obtenerKpisFinancieros(fechaInicio: \"2026-01-01T00:00:00Z\", fechaFin: \"2026-01-31T23:59:59Z\") { fechaInicio fechaFin ingresos { totalBs } } }";
         var anonymous = graphql(port, query, Map.of());
