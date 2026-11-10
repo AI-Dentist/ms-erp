@@ -192,6 +192,20 @@ abstract class JwtAudienceSecurityTest {
         assertThat(snapshot()).isEqualTo(before);
     }
 
+    @Test
+    void paidSpendingRequiresAuthenticationAndPreservesFinancialRoles() throws Exception {
+        String query = "{ obtenerGastoPagadoPaciente(pacienteId: \"60000000-0000-0000-0000-000000000001\") { pacienteId moneda completo totalPagadoBs } }";
+        var anonymous = graphql(port, query, Map.of());
+        assertThat(anonymous.statusCode()).isEqualTo(401);
+        for (String role : List.of("ADMIN", "CAJERO", "RECEPCIONISTA")) {
+            JsonNode data = success(query, token("\"" + EXPECTED + "\"", role));
+            assertThat(data.path("obtenerGastoPagadoPaciente").path("moneda").asText()).isEqualTo("BOB");
+        }
+        var denied = graphql(port, query, bearer(token("\"" + EXPECTED + "\"", "ODONTOLOGO")));
+        assertThat(denied.statusCode()).isEqualTo(200);
+        assertThat(denied.body()).contains("FORBIDDEN");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"issuer", "signature", "expiry"})
     void expectedAudienceDoesNotBypassExistingJwtValidation(String invalid) throws Exception {

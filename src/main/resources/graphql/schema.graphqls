@@ -21,6 +21,7 @@ type Query {
     listarConsultorios: [Consultorio!]!
     listarServiciosOdontologicos(especialidadId: UUID): [ServicioOdontologico!]!
 
+    obtenerGastoPagadoPaciente(pacienteId: UUID!): GastoPagadoPaciente!
     listarOrdenesCobro(estado: EstadoOrdenCobro, pacienteId: UUID): [OrdenCobro!]!
     obtenerOrdenCobroDetalle(id: UUID!): OrdenCobro
     listarCuotasPendientesPorPaciente(pacienteId: UUID!): [CuotaPago!]!
@@ -198,6 +199,13 @@ type ServicioOdontologico {
     precioBaseBs: BigDecimal!
     especialidad: Especialidad
     activo: Boolean!
+}
+
+type GastoPagadoPaciente {
+    pacienteId: UUID!
+    moneda: String!
+    completo: Boolean!
+    totalPagadoBs: BigDecimal
 }
 
 type OrdenCobro {

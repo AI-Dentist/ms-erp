@@ -1,6 +1,24 @@
 # MS3 patient spending: available MS1 evidence
 
-The existing authenticated GraphQL query provides **nominal paid-installment history**, not a provable actual cash total for nonempty histories. In particular, PagoFácil demonstration charges can differ from the nominal amount recorded in the installment, cash movement and receipt. Restoring Keycloak alone does not expose the actual QR charge through this query. No new API or authorization expansion is proposed here.
+Use the additive authenticated `obtenerGastoPagadoPaciente` query for an attributable, complete cash-ledger total. Its result is not a bank confirmation and cannot establish an actual QR provider charge. Forward the current caller's Bearer token; the existing financial read roles are ADMIN, CAJERO and RECEPCIONISTA. No authorization expansion is provided.
+
+```graphql
+query PaidSpending($pacienteId: UUID!) {
+  obtenerGastoPagadoPaciente(pacienteId: $pacienteId) {
+    pacienteId moneda completo totalPagadoBs
+  }
+}
+```
+
+The argument is `UUID!`; the result is `GastoPagadoPaciente!` with `pacienteId: UUID!`, `moneda: String!` (always `BOB`), `completo: Boolean!` and nullable `totalPagadoBs: BigDecimal`. A nonexistent patient produces an error; inactive patients retain their history. A valid empty or unpaid history is complete with zero. For complete paid history, the total sums only consistent cash payments, including paid installments in partially paid orders.
+
+The read uses a single database snapshot, linking patient UUID to orders, installments, cash movements and receipt rows. It executes with `@Transactional(readOnly = true)` using a static single `SELECT` without calling sequence generators (`nextval('recibo_numero_seq')` is never invoked) or mutating financial records. It checks plan counts and balances, statuses, duplicate quota/movement/receipt IDs, valid positive finite amounts for every attributable quota (both paid and unpaid), cash method, income/category, payment date presence (`fechaPagoPresente`), and matching payment, movement and receipt timestamps. An empty sentinel requires a single consistent row without orphan quota or receipt identifiers. Missing, contradictory or duplicate evidence, non-finite/negative amounts, QR or any unsupported payment method returns `completo: false` and `totalPagadoBs: null`; no partial subtotal is returned. A missing PDF does not invalidate an existing receipt row.
+
+MS3 must validate the whole GraphQL response, returned patient UUID, `BOB`, boolean completeness and finite nonnegative total. On incomplete data, errors, malformed response, 401/403, timeout or transport failure, retain the explicitly labeled appointments × Bs 60 estimate and its provenance; never interpret failure as zero. Do not log tokens, payment records or patient data. Unlinked movements (`cuota_id` null) cannot reliably be associated with a patient; never infer that association from fiscal CI/NIT or name. Ledger consistency establishes only recorded attributable cash, not physical cash or bank proof.
+
+## Previous nominal history query
+
+The existing query below remains available for history but is superseded for actual cash reads. PagoFácil demonstration charges can differ from nominal installment, movement and receipt amounts. Restoring Keycloak alone cannot establish the actual QR charge.
 
 ## Read the existing history
 
@@ -20,7 +38,7 @@ Select installments with `estado: PAGADA` (the order enum is `PAGADO`, not `PAGA
 
 ## Why nominal settlement is not actual provider cash
 
-For example, an original Bs 350.00 installment generates a Bs 0.35 PagoFácil provider request, while settlement records a Bs 350.00 movement and receipt. The provider query accepts either scaled or original amount, so neither multiplying nor dividing a receipt reliably establishes the amount actually charged. The query does not expose payment method, receipt or provider amount. `Recibo` exposes neither method nor provider reference; `MovimientoCaja` exposes method through a date-range query, not a patient-linked public query, and its amount is not proof of the provider charge. Do not join patients using fiscal CI/NIT or razón social: these are not guaranteed patient identity.
+For example, an original Bs 350.00 installment generates a Bs 0.35 PagoFácil provider request, while settlement records a Bs 350.00 movement and receipt. The provider query accepts either scaled or original amount, so neither multiplying nor dividing a receipt reliably establishes the amount actually charged. The previous history query does not expose payment method, receipt or provider amount. `Recibo` exposes neither method nor provider reference; `MovimientoCaja` exposes method through a date-range query, not a patient-linked public query, and its amount is not proof of the provider charge. Do not join patients using fiscal CI/NIT or razón social: these are not guaranteed patient identity.
 
 ## Source evidence
 

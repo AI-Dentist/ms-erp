@@ -60,6 +60,13 @@ type Especialidad {
   nombre: String!
 }
 
+type GastoPagadoPaciente {
+  completo: Boolean!
+  moneda: String!
+  pacienteId: UUID!
+  totalPagadoBs: BigDecimal
+}
+
 type JornadaOffline {
   clavePublicaSpki: String!
   credencial: String!
@@ -245,6 +252,7 @@ type Query {
   obtenerConfiguracionEmpresa: EmpresaConfig!
   obtenerEstadoServidorMcp: McpServerStatus!
   obtenerFlujoCaja(fechaFin: DateTime!, fechaInicio: DateTime!): ResumenFlujoCaja!
+  obtenerGastoPagadoPaciente(pacienteId: UUID!): GastoPagadoPaciente!
   " Canonical identity from the verified JWT subject, never a caller-supplied identifier."
   obtenerMiOdontologoId: UUID!
   " ADMIN/CAJERO: exact verified JWT subject -> active ERP user, without a doctor dependency."
